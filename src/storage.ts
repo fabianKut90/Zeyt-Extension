@@ -17,6 +17,7 @@ const DEFAULTS: StoredConfig = {
   lastFocusState: null,
   lastBlockList: [],
   lastBlockListVersion: 0,
+  blockListFetchedAt: 0,
   pairing: null,
 };
 
@@ -43,6 +44,7 @@ export async function clearPairing(): Promise<void> {
     lastFocusState: null,
     lastBlockList: [],
     lastBlockListVersion: 0,
+    blockListFetchedAt: 0,
     pairing: null,
   });
 }

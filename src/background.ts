@@ -1,23 +1,22 @@
 /**
  * zeyt Service Worker (MV3)
  *
- * Delivery model (phone → extension):
- *   Primary:  poll on tab switch / Chrome focus (debounced 30s). This fires
- *             naturally when the user is actually browsing — exactly when
- *             blocking matters. Typical usage: ~50-100 polls/day vs 1,440
- *             for 1-min time-based polling.
- *   Secondary: popup open always triggers an immediate POLL_NOW.
- *   Fallback: 5-minute alarm catches browser restarts / long idle periods.
+ * Two separate concerns, two separate cadences:
  *
- * Cloudflare free tier math:
- *   ~100 tab-switch polls/user/day × 30 days = ~3,000 DO req/month
- *   400k limit → headroom for ~130 users.
+ * 1. BLOCK LIST (what to block) — refreshed once per day + on popup open.
+ *    Stored locally. Never fetched per navigation.
  *
- * Other responsibilities:
- * - ETag / 304 to avoid redundant JSON parsing
- * - declarativeNetRequest block rules
- * - Pairing flow
- * - Fail-closed: keep block rules when state goes stale during an active block
+ * 2. BLOCK STATE (are we blocking right now?) — fetched on demand only when
+ *    the user navigates to a URL that is in the local block list.
+ *    This is the only moment it matters.
+ *
+ * Cloudflare free tier math (~1,200 users):
+ *   Block list:  1 req/user/day  ×  30 days  =      30 req/month
+ *   State check: ~10 req/user/day × 30 days  =     300 req/month
+ *   Total: ~330 req/user/month → 400k limit → ~1,200 users
+ *
+ * Unblocking flow: phone unlocks → user tries blocked site → blocked.html
+ * auto-check fires → POLL_NOW → isBlocking: false → rules cleared → reload.
  */
 
 import { getConfig, setConfig, clearPairing, shouldFailClosed } from './storage';
@@ -28,39 +27,39 @@ import type { FocusStateSnapshot, SWMessage, SWMessageResult } from './types';
 // Worker URL is fixed per deployment — users never configure this
 export const WORKER_URL = 'https://focuslink.fabian-kutschera.workers.dev';
 
-const PAIRING_ALARM = 'zeyt_pair_poll';
+const BLOCKLIST_ALARM   = 'zeyt_blocklist';
+const PAIRING_ALARM     = 'zeyt_pair_poll';
 
-const PAIR_POLL_INTERVAL_S = 3;
-const STALE_THRESHOLD_MS = 60 * 60_000; // 60 minutes
-const DEBOUNCE_MS = 30_000; // minimum gap between activity-triggered polls
-
-let lastPollAt = 0; // in-memory; resets when SW restarts (cold start always polls via onStartup)
+const PAIR_POLL_INTERVAL_S    = 3;
+const BLOCKLIST_REFRESH_MS    = 24 * 60 * 60_000; // 24 hours
+const STALE_THRESHOLD_MS      = 4  * 60 * 60_000; // 4 hours (fail-closed guard)
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await pollFocusState();
+  chrome.alarms.create(BLOCKLIST_ALARM, { periodInMinutes: 24 * 60 });
+  await maybeRefreshBlockList();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await pollFocusState();
+  chrome.alarms.create(BLOCKLIST_ALARM, { periodInMinutes: 24 * 60 });
+  await maybeRefreshBlockList();
 });
 
-// ─── Activity-based polling ───────────────────────────────────────────────────
-// Poll when the user switches tabs or returns to Chrome — debounced to 30s.
-// This is the primary trigger: it fires at the exact moment blocking matters.
+// ─── Alarms ───────────────────────────────────────────────────────────────────
 
-async function pollOnActivity(): Promise<void> {
-  if (Date.now() - lastPollAt < DEBOUNCE_MS) return;
-  await pollFocusState();
-}
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === BLOCKLIST_ALARM) await refreshBlockList();
+  if (alarm.name === PAIRING_ALARM)   await pollPairingStatus();
+});
 
-chrome.tabs.onActivated.addListener(() => { pollOnActivity(); });
+// ─── Navigation trigger ───────────────────────────────────────────────────────
+// Check block state only when the user navigates to a URL in the block list.
+// If rules are already active, declarativeNetRequest redirects to blocked.html
+// before onUpdated fires — so this only triggers when the extension doesn't
+// yet know it should be blocking (the exact moment that matters).
+
 chrome.tabs.onUpdated.addListener(async (_tabId, info, tab) => {
-  // Only poll if the user navigated to a URL that's in the block list.
-  // If rules are already active, declarativeNetRequest redirects to blocked.html
-  // before this fires — so this only triggers when the extension doesn't yet
-  // know it should be blocking (the key moment we care about).
   if (info.status !== 'complete' || !tab.url) return;
   const config = await getConfig();
   const blockList = config.lastBlockList ?? [];
@@ -68,33 +67,40 @@ chrome.tabs.onUpdated.addListener(async (_tabId, info, tab) => {
   try {
     const hostname = new URL(tab.url).hostname;
     const relevant = blockList.some(d => hostname === d || hostname.endsWith(`.${d}`));
-    if (relevant) pollOnActivity();
+    if (relevant) await pollFocusState();
   } catch { /* invalid URL — ignore */ }
 });
-chrome.windows.onFocusChanged.addListener((windowId) => {
-  if (windowId !== chrome.windows.WINDOW_ID_NONE) pollOnActivity();
-});
 
-// ─── Alarms ───────────────────────────────────────────────────────────────────
+// ─── Block list ───────────────────────────────────────────────────────────────
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === PAIRING_ALARM) {
-    await pollPairingStatus();
-  }
-});
-
-async function schedulePoll(): Promise<void> {
-  // No-op: background polling removed. State is fetched on browser activity
-  // (tab switch, window focus, navigation) and on browser/extension startup.
+async function maybeRefreshBlockList(): Promise<void> {
+  const config = await getConfig();
+  if (!config.groupId || !config.extensionDeviceToken) return;
+  const age = Date.now() - (config.blockListFetchedAt ?? 0);
+  if (age > BLOCKLIST_REFRESH_MS) await refreshBlockList();
 }
 
-// ─── Focus state polling ──────────────────────────────────────────────────────
+async function refreshBlockList(): Promise<void> {
+  const config = await getConfig();
+  if (!config.groupId || !config.extensionDeviceToken) return;
+  const api = new FocusLinkAPI(WORKER_URL, config.groupId, config.extensionDeviceToken);
+  try {
+    const blockList = await api.getBlockList();
+    await setConfig({
+      lastBlockList: blockList.domains,
+      lastBlockListVersion: blockList.version,
+      blockListFetchedAt: Date.now(),
+    });
+  } catch (err) {
+    console.warn('[zeyt] Block list refresh failed:', err);
+  }
+}
+
+// ─── Focus state ──────────────────────────────────────────────────────────────
 
 async function pollFocusState(): Promise<void> {
-  lastPollAt = Date.now();
   const config = await getConfig();
-
-  if (!config.groupId || !config.extensionDeviceToken) return; // not paired
+  if (!config.groupId || !config.extensionDeviceToken) return;
 
   const api = new FocusLinkAPI(WORKER_URL, config.groupId, config.extensionDeviceToken);
 
@@ -102,11 +108,9 @@ async function pollFocusState(): Promise<void> {
     const state = await api.getFocusState(config.lastFocusState?.version ?? undefined);
 
     if (state === null) {
-      // 304 Not Modified — just update fetchedAt to record freshness
+      // 304 Not Modified — touch fetchedAt to record freshness
       if (config.lastFocusState) {
-        await setConfig({
-          lastFocusState: { ...config.lastFocusState, fetchedAt: Date.now() },
-        });
+        await setConfig({ lastFocusState: { ...config.lastFocusState, fetchedAt: Date.now() } });
       }
       return;
     }
@@ -121,21 +125,11 @@ async function pollFocusState(): Promise<void> {
     };
 
     await setConfig({ lastFocusState: snapshot });
-
-    // Refresh block list if version changed
-    if (state.blockListVersion !== config.lastBlockListVersion) {
-      const blockList = await api.getBlockList();
-      await setConfig({
-        lastBlockList: blockList.domains,
-        lastBlockListVersion: blockList.version,
-      });
-    }
-
-    await applyFocusState(state.isBlocking, await getEffectiveBlockList());
+    await applyFocusState(state.isBlocking, config.lastBlockList ?? []);
   } catch (err) {
-    console.error('[zeyt] Poll failed:', err);
+    console.error('[zeyt] State poll failed:', err);
     await applyFailClosed();
-    await setBadge('!', '#f59e0b'); // yellow warning badge
+    await setBadge('!', '#f59e0b');
   }
 }
 
@@ -152,21 +146,11 @@ async function applyFocusState(isBlocking: boolean, domains: string[]): Promise<
 async function applyFailClosed(): Promise<void> {
   const config = await getConfig();
   const snapshot = config.lastFocusState;
-
   if (!snapshot) return;
-
   if (shouldFailClosed(snapshot, STALE_THRESHOLD_MS)) {
-    // Active block + stale state → keep block rules, do NOT clear
     console.warn('[zeyt] Fail-closed: maintaining block rules due to stale state');
     await setBadge('!', '#f59e0b');
   }
-  // If not blocking and state is stale, safe to leave unblocked (already cleared)
-}
-
-
-async function getEffectiveBlockList(): Promise<string[]> {
-  const config = await getConfig();
-  return config.lastBlockList;
 }
 
 // ─── Pairing ──────────────────────────────────────────────────────────────────
@@ -201,7 +185,9 @@ async function pollPairingStatus(): Promise<void> {
       });
       await chrome.alarms.clear(PAIRING_ALARM);
       await notifyPopup({ type: 'PAIRING_COMPLETE' });
-      await pollFocusState(); // immediate sync after pairing
+      // After pairing: fetch block list + state immediately
+      await refreshBlockList();
+      await pollFocusState();
     } else if (result.status === 'expired') {
       await setConfig({ pairing: null });
       await chrome.alarms.clear(PAIRING_ALARM);
@@ -209,11 +195,10 @@ async function pollPairingStatus(): Promise<void> {
     }
   } catch (err) {
     console.error('[zeyt] Pairing poll failed:', err);
-    // Retry on next alarm tick
   }
 }
 
-// ─── Message handler (from popup / options) ───────────────────────────────────
+// ─── Message handler (from popup / options / blocked.html) ────────────────────
 
 chrome.runtime.onMessage.addListener(
   (
@@ -224,20 +209,18 @@ chrome.runtime.onMessage.addListener(
     (async () => {
       switch (message.type) {
         case 'START_PAIRING': {
-          const result = await handleStartPairing();
-          sendResponse(result);
+          sendResponse(await handleStartPairing());
           break;
         }
         case 'GET_STATUS': {
-          const result = await handleGetStatus();
-          sendResponse(result);
+          sendResponse(await handleGetStatus());
           break;
         }
         case 'POLL_NOW': {
-          // Popup opened — fetch fresh state immediately, then return cached status
+          // Popup opened or blocked.html "Check now" — fetch both list and state
+          await refreshBlockList();
           await pollFocusState();
-          const result = await handleGetStatus();
-          sendResponse(result);
+          sendResponse(await handleGetStatus());
           break;
         }
         case 'UNPAIR': {
@@ -249,7 +232,7 @@ chrome.runtime.onMessage.addListener(
         }
       }
     })();
-    return true; // Keep message channel open for async response
+    return true;
   },
 );
 
@@ -265,7 +248,6 @@ async function handleStartPairing(): Promise<SWMessageResult> {
         status: 'pending',
       },
     });
-    // Poll for completion every 3 seconds
     chrome.alarms.create(PAIRING_ALARM, { periodInMinutes: PAIR_POLL_INTERVAL_S / 60 });
     return { type: 'PAIRING_STARTED', qrPayload: result.qrPayload, expiresAt: result.expiresAt };
   } catch (err) {

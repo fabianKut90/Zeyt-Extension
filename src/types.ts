@@ -40,6 +40,7 @@ export interface StoredConfig {
   lastFocusState: FocusStateSnapshot | null;
   lastBlockList: string[];
   lastBlockListVersion: number;
+  blockListFetchedAt: number;         // timestamp of last block list fetch (0 = never)
   pairing: PairingInProgress | null;
 }
 
