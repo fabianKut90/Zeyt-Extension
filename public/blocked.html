@@ -105,6 +105,22 @@
         });
       }
 
+      // Send a message to the SW, retrying once if the SW isn't awake yet
+      async function sendToSW(msg, retries = 2, delayMs = 800) {
+        for (let i = 0; i < retries; i++) {
+          try {
+            return await chrome.runtime.sendMessage(msg);
+          } catch (e) {
+            const isConnectionError = e?.message?.includes('Receiving end does not exist');
+            if (i < retries - 1 && isConnectionError) {
+              await new Promise(r => setTimeout(r, delayMs));
+            } else {
+              throw e;
+            }
+          }
+        }
+      }
+
       // Poll helper — sends POLL_NOW to SW, reloads if unblocked
       async function checkState(auto) {
         const btn = document.getElementById('btn-refresh');
@@ -112,7 +128,7 @@
         btn.disabled = true;
         if (!auto) msg.textContent = 'Checking…';
         try {
-          const result = await chrome.runtime.sendMessage({ type: 'POLL_NOW' });
+          const result = await sendToSW({ type: 'POLL_NOW' });
           if (result?.isBlocking === false) {
             msg.textContent = 'Unblocked! Reloading…';
             setTimeout(() => location.reload(), 600);
