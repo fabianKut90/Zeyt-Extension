@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Site Blocked — zeyt</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { height: 100%; }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f9fafb;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #111827;
+      }
+      .card {
+        text-align: center;
+        max-width: 380px;
+        padding: 40px 32px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      }
+      .icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+      }
+      h1 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+      p { font-size: 14px; color: #6b7280; line-height: 1.6; }
+      .domain {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 4px 12px;
+        background: #fee2e2;
+        color: #b91c1c;
+        border-radius: 9999px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .until {
+        margin-top: 16px;
+        font-size: 13px;
+        color: #9ca3af;
+      }
+      .footer {
+        margin-top: 24px;
+        font-size: 11px;
+        color: #d1d5db;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="icon">🔒</div>
+      <h1>Focus Mode Active</h1>
+      <p>This site is blocked during your current focus session.</p>
+      <div class="domain" id="domain">—</div>
+      <p class="until" id="until-text"></p>
+      <p class="footer">zeyt · Unlock with NFC tag on your phone</p>
+    </div>
+    <script>
+      // Show the blocked domain
+      const params = new URLSearchParams(location.search);
+      const ref = document.referrer || params.get('url') || '';
+      try {
+        const host = ref ? new URL(ref).hostname : location.hostname;
+        document.getElementById('domain').textContent = host;
+      } catch {}
+
+      // Show session end time from chrome.storage if available
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.get('config', ({ config }) => {
+          const endsAt = config?.lastFocusState?.endsAt;
+          const el = document.getElementById('until-text');
+          if (endsAt && el) {
+            el.textContent = `Session ends at ${new Date(endsAt).toLocaleTimeString()}`;
+          } else if (el) {
+            el.textContent = 'Session ends when you tap your NFC tag.';
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
