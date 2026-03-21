@@ -28,25 +28,21 @@ import type { FocusStateSnapshot, SWMessage, SWMessageResult } from './types';
 // Worker URL is fixed per deployment — users never configure this
 export const WORKER_URL = 'https://focuslink.fabian-kutschera.workers.dev';
 
-const POLL_ALARM = 'zeyt_poll';
 const PAIRING_ALARM = 'zeyt_pair_poll';
 
-const POLL_INTERVAL_S = 3600; // 60 minutes — safety net only; tab-switch events are the primary trigger
 const PAIR_POLL_INTERVAL_S = 3;
-const STALE_THRESHOLD_MS = 90 * 60_000; // 90 minutes (must exceed poll interval)
+const STALE_THRESHOLD_MS = 60 * 60_000; // 60 minutes
 const DEBOUNCE_MS = 30_000; // minimum gap between activity-triggered polls
 
-let lastPollAt = 0; // in-memory; resets when SW restarts (that's fine — cold start always polls)
+let lastPollAt = 0; // in-memory; resets when SW restarts (cold start always polls via onStartup)
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await schedulePoll(POLL_INTERVAL_S);
   await pollFocusState();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await schedulePoll(POLL_INTERVAL_S);
   await pollFocusState();
 });
 
@@ -60,6 +56,10 @@ async function pollOnActivity(): Promise<void> {
 }
 
 chrome.tabs.onActivated.addListener(() => { pollOnActivity(); });
+chrome.tabs.onUpdated.addListener((_tabId, info) => {
+  // Only trigger on completed navigations, not intermediate loading states
+  if (info.status === 'complete') pollOnActivity();
+});
 chrome.windows.onFocusChanged.addListener((windowId) => {
   if (windowId !== chrome.windows.WINDOW_ID_NONE) pollOnActivity();
 });
@@ -67,17 +67,14 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 // ─── Alarms ───────────────────────────────────────────────────────────────────
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === POLL_ALARM) {
-    await pollFocusState();
-  }
   if (alarm.name === PAIRING_ALARM) {
     await pollPairingStatus();
   }
 });
 
-async function schedulePoll(intervalSeconds: number): Promise<void> {
-  await chrome.alarms.clear(POLL_ALARM);
-  chrome.alarms.create(POLL_ALARM, { periodInMinutes: intervalSeconds / 60 });
+async function schedulePoll(): Promise<void> {
+  // No-op: background polling removed. State is fetched on browser activity
+  // (tab switch, window focus, navigation) and on browser/extension startup.
 }
 
 // ─── Focus state polling ──────────────────────────────────────────────────────
