@@ -48,6 +48,28 @@
         font-size: 11px;
         color: #d1d5db;
       }
+      .btn-refresh {
+        margin-top: 20px;
+        padding: 8px 20px;
+        background: #3A4F3F;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: opacity 0.15s;
+      }
+      .btn-refresh:disabled { opacity: 0.5; cursor: default; }
+      .refresh-msg {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #9ca3af;
+        min-height: 18px;
+      }
     </style>
   </head>
   <body>
@@ -57,6 +79,8 @@
       <p>This site is blocked during your current focus session.</p>
       <div class="domain" id="domain">—</div>
       <p class="until" id="until-text"></p>
+      <button class="btn-refresh" id="btn-refresh">↻ Check now</button>
+      <p class="refresh-msg" id="refresh-msg"></p>
       <p class="footer">zeyt · Unlock with NFC tag on your phone</p>
     </div>
     <script>
@@ -77,6 +101,29 @@
             el.textContent = `Session ends at ${new Date(endsAt).toLocaleTimeString()}`;
           } else if (el) {
             el.textContent = 'Session ends when you tap your NFC tag.';
+          }
+        });
+      }
+
+      // "Check now" — asks the SW to poll immediately then reloads if unblocked
+      const btn = document.getElementById('btn-refresh');
+      const msg = document.getElementById('refresh-msg');
+      if (btn && typeof chrome !== 'undefined' && chrome.runtime) {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          msg.textContent = 'Checking…';
+          try {
+            const result = await chrome.runtime.sendMessage({ type: 'POLL_NOW' });
+            if (result?.isBlocking === false) {
+              msg.textContent = 'Unblocked! Reloading…';
+              setTimeout(() => location.reload(), 600);
+            } else {
+              msg.textContent = 'Still blocked. Try again after unlocking your phone.';
+              btn.disabled = false;
+            }
+          } catch {
+            msg.textContent = 'Could not reach extension. Try reopening the tab.';
+            btn.disabled = false;
           }
         });
       }
