@@ -31,9 +31,9 @@ export const WORKER_URL = 'https://focuslink.fabian-kutschera.workers.dev';
 const POLL_ALARM = 'zeyt_poll';
 const PAIRING_ALARM = 'zeyt_pair_poll';
 
-const POLL_INTERVAL_S = 300; // 5 minutes — safety net only; tab-switch events are the primary trigger
+const POLL_INTERVAL_S = 3600; // 60 minutes — safety net only; tab-switch events are the primary trigger
 const PAIR_POLL_INTERVAL_S = 3;
-const STALE_THRESHOLD_MS = 10 * 60_000; // 10 minutes
+const STALE_THRESHOLD_MS = 90 * 60_000; // 90 minutes (must exceed poll interval)
 const DEBOUNCE_MS = 30_000; // minimum gap between activity-triggered polls
 
 let lastPollAt = 0; // in-memory; resets when SW restarts (that's fine — cold start always polls)
