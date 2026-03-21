@@ -56,9 +56,20 @@ async function pollOnActivity(): Promise<void> {
 }
 
 chrome.tabs.onActivated.addListener(() => { pollOnActivity(); });
-chrome.tabs.onUpdated.addListener((_tabId, info) => {
-  // Only trigger on completed navigations, not intermediate loading states
-  if (info.status === 'complete') pollOnActivity();
+chrome.tabs.onUpdated.addListener(async (_tabId, info, tab) => {
+  // Only poll if the user navigated to a URL that's in the block list.
+  // If rules are already active, declarativeNetRequest redirects to blocked.html
+  // before this fires — so this only triggers when the extension doesn't yet
+  // know it should be blocking (the key moment we care about).
+  if (info.status !== 'complete' || !tab.url) return;
+  const config = await getConfig();
+  const blockList = config.lastBlockList ?? [];
+  if (blockList.length === 0) return;
+  try {
+    const hostname = new URL(tab.url).hostname;
+    const relevant = blockList.some(d => hostname === d || hostname.endsWith(`.${d}`));
+    if (relevant) pollOnActivity();
+  } catch { /* invalid URL — ignore */ }
 });
 chrome.windows.onFocusChanged.addListener((windowId) => {
   if (windowId !== chrome.windows.WINDOW_ID_NONE) pollOnActivity();
