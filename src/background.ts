@@ -20,20 +20,19 @@ export const WORKER_URL = 'https://focuslink.fabian-kutschera.workers.dev';
 const POLL_ALARM = 'zeyt_poll';
 const PAIRING_ALARM = 'zeyt_pair_poll';
 
-const POLL_INTERVAL_ACTIVE_S = 15;
-const POLL_INTERVAL_IDLE_S = 60;
+const POLL_INTERVAL_S = 120; // 2 minutes — keeps DO request count well within free tier
 const PAIR_POLL_INTERVAL_S = 3;
 const STALE_THRESHOLD_MS = 90_000; // 90 seconds
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await schedulePoll(POLL_INTERVAL_ACTIVE_S);
+  await schedulePoll(POLL_INTERVAL_S);
   await pollFocusState();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await schedulePoll(POLL_INTERVAL_ACTIVE_S);
+  await schedulePoll(POLL_INTERVAL_S);
   await pollFocusState();
 });
 
@@ -128,9 +127,8 @@ async function applyFailClosed(): Promise<void> {
   // If not blocking and state is stale, safe to leave unblocked (already cleared)
 }
 
-async function updatePollInterval(isBlocking: boolean): Promise<void> {
-  const interval = isBlocking ? POLL_INTERVAL_ACTIVE_S : POLL_INTERVAL_IDLE_S;
-  await schedulePoll(interval);
+async function updatePollInterval(_isBlocking: boolean): Promise<void> {
+  await schedulePoll(POLL_INTERVAL_S);
 }
 
 async function getEffectiveBlockList(): Promise<string[]> {
