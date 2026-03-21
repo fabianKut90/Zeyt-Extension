@@ -105,27 +105,34 @@
         });
       }
 
-      // "Check now" — asks the SW to poll immediately then reloads if unblocked
-      const btn = document.getElementById('btn-refresh');
-      const msg = document.getElementById('refresh-msg');
-      if (btn && typeof chrome !== 'undefined' && chrome.runtime) {
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          msg.textContent = 'Checking…';
-          try {
-            const result = await chrome.runtime.sendMessage({ type: 'POLL_NOW' });
-            if (result?.isBlocking === false) {
-              msg.textContent = 'Unblocked! Reloading…';
-              setTimeout(() => location.reload(), 600);
-            } else {
-              msg.textContent = 'Still blocked. Try again after unlocking your phone.';
-              btn.disabled = false;
-            }
-          } catch {
-            msg.textContent = 'Could not reach extension. Try reopening the tab.';
+      // Poll helper — sends POLL_NOW to SW, reloads if unblocked
+      async function checkState(auto) {
+        const btn = document.getElementById('btn-refresh');
+        const msg = document.getElementById('refresh-msg');
+        btn.disabled = true;
+        if (!auto) msg.textContent = 'Checking…';
+        try {
+          const result = await chrome.runtime.sendMessage({ type: 'POLL_NOW' });
+          if (result?.isBlocking === false) {
+            msg.textContent = 'Unblocked! Reloading…';
+            setTimeout(() => location.reload(), 600);
+          } else {
+            if (!auto) msg.textContent = 'Still blocked. Try again after unlocking your phone.';
             btn.disabled = false;
           }
-        });
+        } catch {
+          if (!auto) msg.textContent = 'Could not reach extension. Try reopening the tab.';
+          btn.disabled = false;
+        }
+      }
+
+      const btn = document.getElementById('btn-refresh');
+      if (btn && typeof chrome !== 'undefined' && chrome.runtime) {
+        // Auto-check on load — clears stale rules silently if already unblocked
+        checkState(true);
+
+        // Manual retry button
+        btn.addEventListener('click', () => checkState(false));
       }
     </script>
   </body>
