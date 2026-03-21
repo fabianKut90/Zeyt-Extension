@@ -57,6 +57,7 @@ export interface FocusStateSnapshot {
 export type SWMessage =
   | { type: 'START_PAIRING' }
   | { type: 'GET_STATUS' }
+  | { type: 'POLL_NOW' }   // triggered by popup open — immediate fresh fetch
   | { type: 'UNPAIR' };
 
 export type SWMessageResult =

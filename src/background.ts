@@ -1,12 +1,18 @@
 /**
  * zeyt Service Worker (MV3)
  *
- * Responsibilities:
- * - Schedule state polling via chrome.alarms (survives SW restarts)
- * - Poll /state endpoint with ETag to avoid redundant parsing
- * - Apply or clear declarativeNetRequest block rules
- * - Handle pairing: initiate, poll for completion
- * - Fail-closed: maintain block rules when state becomes stale during active block
+ * Delivery model (phone → extension):
+ *   Primary:  phone pushes state to Cloudflare on every lock/unlock. Extension
+ *             fetches immediately when the popup opens (POLL_NOW message).
+ *   Fallback: 10-minute background alarm catches browser restarts or missed
+ *             pushes. This keeps Cloudflare DO requests well within the free tier
+ *             (~430 req/user/month vs. the 400k limit).
+ *
+ * Other responsibilities:
+ * - ETag / 304 to avoid redundant JSON parsing
+ * - declarativeNetRequest block rules
+ * - Pairing flow
+ * - Fail-closed: keep block rules when state goes stale during an active block
  */
 
 import { getConfig, setConfig, clearPairing, shouldFailClosed } from './storage';
@@ -20,9 +26,9 @@ export const WORKER_URL = 'https://focuslink.fabian-kutschera.workers.dev';
 const POLL_ALARM = 'zeyt_poll';
 const PAIRING_ALARM = 'zeyt_pair_poll';
 
-const POLL_INTERVAL_S = 120; // 2 minutes — keeps DO request count well within free tier
+const POLL_INTERVAL_S = 600; // 10 minutes — safety net only; popup open triggers POLL_NOW instead
 const PAIR_POLL_INTERVAL_S = 3;
-const STALE_THRESHOLD_MS = 90_000; // 90 seconds
+const STALE_THRESHOLD_MS = 15 * 60_000; // 15 minutes (must exceed poll interval)
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -95,7 +101,6 @@ async function pollFocusState(): Promise<void> {
     }
 
     await applyFocusState(state.isBlocking, await getEffectiveBlockList());
-    await updatePollInterval(state.isBlocking);
   } catch (err) {
     console.error('[zeyt] Poll failed:', err);
     await applyFailClosed();
@@ -127,9 +132,6 @@ async function applyFailClosed(): Promise<void> {
   // If not blocking and state is stale, safe to leave unblocked (already cleared)
 }
 
-async function updatePollInterval(_isBlocking: boolean): Promise<void> {
-  await schedulePoll(POLL_INTERVAL_S);
-}
 
 async function getEffectiveBlockList(): Promise<string[]> {
   const config = await getConfig();
@@ -196,6 +198,13 @@ chrome.runtime.onMessage.addListener(
           break;
         }
         case 'GET_STATUS': {
+          const result = await handleGetStatus();
+          sendResponse(result);
+          break;
+        }
+        case 'POLL_NOW': {
+          // Popup opened — fetch fresh state immediately, then return cached status
+          await pollFocusState();
           const result = await handleGetStatus();
           sendResponse(result);
           break;

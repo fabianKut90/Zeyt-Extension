@@ -18,7 +18,9 @@ async function sendToSW(message: SWMessage): Promise<SWMessageResult> {
 }
 
 async function init(): Promise<void> {
-  const result = await sendToSW({ type: 'GET_STATUS' });
+  // POLL_NOW fetches fresh state from Cloudflare then returns STATUS —
+  // this is the primary delivery path; the 10-min background alarm is just a fallback.
+  const result = await sendToSW({ type: 'POLL_NOW' });
   if (result.type !== 'STATUS') return;
 
   if (result.isPaired) {
