@@ -1,8 +1,8 @@
-// Show the blocked domain
+// The original URL is passed as ?url= by the declarativeNetRequest redirect rule
 const params = new URLSearchParams(location.search);
-const ref = document.referrer || params.get('url') || '';
+const originalUrl = params.get('url') || '';
 try {
-  const host = ref ? new URL(ref).hostname : location.hostname;
+  const host = originalUrl ? new URL(originalUrl).hostname : location.hostname;
   document.getElementById('domain').textContent = host;
 } catch {}
 
@@ -44,8 +44,8 @@ async function checkState(auto) {
   try {
     const result = await sendToSW({ type: 'POLL_NOW' });
     if (result?.isBlocking === false) {
-      msg.textContent = 'Unblocked! Reloading…';
-      setTimeout(() => location.reload(), 600);
+      msg.textContent = 'Unblocked! Redirecting…';
+      setTimeout(() => { location.href = originalUrl || 'about:blank'; }, 600);
     } else {
       if (!auto) msg.textContent = 'Still blocked. Try again after unlocking your phone.';
       btn.disabled = false;

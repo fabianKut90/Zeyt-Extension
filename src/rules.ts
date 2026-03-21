@@ -12,16 +12,19 @@ export async function updateBlockRules(domains: string[]): Promise<void> {
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
   const removeRuleIds = existing.map((r) => r.id);
 
+  const blockedPage = chrome.runtime.getURL('blocked.html');
+
   const addRules: chrome.declarativeNetRequest.Rule[] = domains.map((domain, i) => ({
     id: BASE_RULE_ID + i,
     priority: 1,
     action: {
       type: chrome.declarativeNetRequest.RuleActionType.REDIRECT,
-      redirect: { extensionPath: '/blocked.html' },
+      // \\0 is replaced by the full matched URL, giving blocked.html?url=https://...
+      redirect: { regexSubstitution: `${blockedPage}?url=\\0` },
     },
     condition: {
-      // ||domain^ matches domain and all subdomains, with or without www
-      urlFilter: `||${domain}^`,
+      // Matches domain and all subdomains (www.domain, sub.domain, etc.)
+      regexFilter: `^https?://([a-z0-9-]+\\.)*${domain.replace(/\./g, '\\.')}(/|$|[/?#])`,
       resourceTypes: [chrome.declarativeNetRequest.ResourceType.MAIN_FRAME],
     },
   }));
