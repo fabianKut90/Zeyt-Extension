@@ -2,11 +2,16 @@
  * zeyt Service Worker (MV3)
  *
  * Delivery model (phone → extension):
- *   Primary:  phone pushes state to Cloudflare on every lock/unlock. Extension
- *             fetches immediately when the popup opens (POLL_NOW message).
- *   Fallback: 10-minute background alarm catches browser restarts or missed
- *             pushes. This keeps Cloudflare DO requests well within the free tier
- *             (~430 req/user/month vs. the 400k limit).
+ *   Primary:  poll on tab switch / Chrome focus (debounced 30s). This fires
+ *             naturally when the user is actually browsing — exactly when
+ *             blocking matters. Typical usage: ~50-100 polls/day vs 1,440
+ *             for 1-min time-based polling.
+ *   Secondary: popup open always triggers an immediate POLL_NOW.
+ *   Fallback: 5-minute alarm catches browser restarts / long idle periods.
+ *
+ * Cloudflare free tier math:
+ *   ~100 tab-switch polls/user/day × 30 days = ~3,000 DO req/month
+ *   400k limit → headroom for ~130 users.
  *
  * Other responsibilities:
  * - ETag / 304 to avoid redundant JSON parsing
@@ -26,9 +31,12 @@ export const WORKER_URL = 'https://focuslink.fabian-kutschera.workers.dev';
 const POLL_ALARM = 'zeyt_poll';
 const PAIRING_ALARM = 'zeyt_pair_poll';
 
-const POLL_INTERVAL_S = 600; // 10 minutes — safety net only; popup open triggers POLL_NOW instead
+const POLL_INTERVAL_S = 300; // 5 minutes — safety net only; tab-switch events are the primary trigger
 const PAIR_POLL_INTERVAL_S = 3;
-const STALE_THRESHOLD_MS = 15 * 60_000; // 15 minutes (must exceed poll interval)
+const STALE_THRESHOLD_MS = 10 * 60_000; // 10 minutes
+const DEBOUNCE_MS = 30_000; // minimum gap between activity-triggered polls
+
+let lastPollAt = 0; // in-memory; resets when SW restarts (that's fine — cold start always polls)
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -40,6 +48,20 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(async () => {
   await schedulePoll(POLL_INTERVAL_S);
   await pollFocusState();
+});
+
+// ─── Activity-based polling ───────────────────────────────────────────────────
+// Poll when the user switches tabs or returns to Chrome — debounced to 30s.
+// This is the primary trigger: it fires at the exact moment blocking matters.
+
+async function pollOnActivity(): Promise<void> {
+  if (Date.now() - lastPollAt < DEBOUNCE_MS) return;
+  await pollFocusState();
+}
+
+chrome.tabs.onActivated.addListener(() => { pollOnActivity(); });
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) pollOnActivity();
 });
 
 // ─── Alarms ───────────────────────────────────────────────────────────────────
@@ -61,6 +83,7 @@ async function schedulePoll(intervalSeconds: number): Promise<void> {
 // ─── Focus state polling ──────────────────────────────────────────────────────
 
 async function pollFocusState(): Promise<void> {
+  lastPollAt = Date.now();
   const config = await getConfig();
 
   if (!config.groupId || !config.extensionDeviceToken) return; // not paired
