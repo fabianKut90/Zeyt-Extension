@@ -111,9 +111,11 @@ async function pollFocusState(): Promise<void> {
     const state = await api.getFocusState(config.lastFocusState?.version ?? undefined);
 
     if (state === null) {
-      // 304 Not Modified — touch fetchedAt to record freshness
+      // 304 Not Modified — state unchanged, but re-apply with current block list
+      // (block list may have been refreshed independently since last apply)
       if (config.lastFocusState) {
         await setConfig({ lastFocusState: { ...config.lastFocusState, fetchedAt: Date.now() } });
+        await applyFocusState(config.lastFocusState.isBlocking, config.lastBlockList ?? []);
       }
       return;
     }
