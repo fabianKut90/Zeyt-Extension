@@ -25,7 +25,7 @@ import { updateBlockRules, clearBlockRules } from './rules';
 import type { FocusStateSnapshot, SWMessage, SWMessageResult } from './types';
 
 // Worker URL is fixed per deployment — users never configure this
-export const WORKER_URL = 'https://focuslink.fabian-kutschera.workers.dev';
+export const WORKER_URL = 'https://focus.zeyt.io';
 
 // In-memory: track previous blocking state to detect transitions
 let _wasBlocking = false;
