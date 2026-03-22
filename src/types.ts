@@ -47,6 +47,7 @@ export interface StoredConfig {
 export interface FocusStateSnapshot {
   isBlocking: boolean;
   sessionId: string | null;
+  startedAt: number | null;
   endsAt: number | null;
   blockListVersion: number;
   version: number;
@@ -63,7 +64,7 @@ export type SWMessage =
 
 export type SWMessageResult =
   | { type: 'PAIRING_STARTED'; qrPayload: string; expiresAt: number }
-  | { type: 'STATUS'; isPaired: boolean; isBlocking: boolean; pairingStatus: string | null; endsAt: number | null; fetchedAt: number | null; syncIssue: boolean }
+  | { type: 'STATUS'; isPaired: boolean; isBlocking: boolean; pairingStatus: string | null; startedAt: number | null; endsAt: number | null; fetchedAt: number | null; syncIssue: boolean }
   | { type: 'PAIRING_COMPLETE' }
   | { type: 'PAIRING_EXPIRED' }
   | { type: 'UNLINKED' }

@@ -17,10 +17,13 @@
       .badge-unlinked { background: #f3f4f6; color: #6b7280; }
       .hint { font-size: 12px; color: #9ca3af; margin-top: 6px; line-height: 1.5; }
       .separator { height: 1px; background: #f3f4f6; margin: 20px 0; }
-      button { padding: 8px 18px; border: none; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; }
+      button { padding: 8px 18px; border: none; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; font-family: inherit; }
       .btn-danger { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
       .btn-danger:hover:not(:disabled) { background: #fee2e2; }
       .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+      .btn-primary { background: #3A4F3F; color: #fff; margin-top: 12px; width: 100%; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; transition: opacity 0.15s; }
+      .btn-primary:hover:not(:disabled) { opacity: 0.88; }
+      .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
       .domain-list { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
       .domain-tag {
         display: inline-block;
@@ -32,30 +35,49 @@
         font-weight: 500;
       }
       .empty-hint { font-size: 12px; color: #9ca3af; margin-top: 8px; }
+
+      /* ── QR pairing ── */
+      #qr-section { margin-top: 14px; text-align: center; display: none; }
+      #qr-section canvas { border-radius: 10px; display: block; margin: 0 auto 8px; }
+      .qr-timer { font-size: 12px; color: #9ca3af; }
+      .qr-success { font-size: 13px; font-weight: 600; color: #065f46; margin-top: 8px; }
+      .qr-error   { font-size: 12px; color: #b91c1c; margin-top: 8px; }
     </style>
   </head>
   <body>
     <h1>zeyt</h1>
 
+    <!-- ── Link card ── -->
     <div class="card">
-      <h2>Status</h2>
+      <h2>Phone Link</h2>
       <div class="row" style="margin-top:8px;">
-        <span class="label">Phone link</span>
+        <span class="label">Status</span>
         <span id="pairing-state" class="badge badge-unlinked">Not linked</span>
       </div>
-      <p class="hint">
-        Open the zeyt popup to pair with your phone app via QR code.
-        The block list is managed in the zeyt phone app — changes sync automatically.
+      <p class="hint" id="pairing-hint">
+        Scan the QR code below with the zeyt app on your phone to link this browser.
       </p>
+
+      <!-- QR + pairing flow (shown when not linked) -->
+      <div id="qr-section">
+        <canvas id="qr-canvas"></canvas>
+        <div class="qr-timer" id="qr-timer"></div>
+        <div class="qr-success" id="qr-success" style="display:none">Linked successfully!</div>
+        <div class="qr-error"   id="qr-error"   style="display:none"></div>
+      </div>
+
+      <button class="btn-primary" id="btn-pair" style="display:none">Show QR Code</button>
     </div>
 
+    <!-- ── Blocked sites ── -->
     <div class="card">
       <h2>Blocked Sites</h2>
-      <p class="hint">Managed in the zeyt phone app. Syncs automatically when you open this page.</p>
+      <p class="hint">Managed in the zeyt app. Syncs automatically when you open this page.</p>
       <div class="domain-list" id="domain-list"></div>
       <p class="empty-hint" id="domain-empty" style="display:none">No sites in your block list yet. Add them in the zeyt app.</p>
     </div>
 
+    <!-- ── Device ── -->
     <div class="card">
       <h2>Device</h2>
       <div class="row" style="margin-top:8px;">

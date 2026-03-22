@@ -123,6 +123,7 @@ async function pollFocusState(): Promise<void> {
     const snapshot: FocusStateSnapshot = {
       isBlocking: state.isBlocking,
       sessionId: state.sessionId,
+      startedAt: state.startedAt,
       endsAt: state.endsAt,
       blockListVersion: state.blockListVersion,
       version: state.version,
@@ -296,6 +297,7 @@ async function handleGetStatus(): Promise<SWMessageResult> {
     isPaired: !!(config.groupId && config.extensionDeviceToken),
     isBlocking: snapshot?.isBlocking ?? false,
     pairingStatus: config.pairing?.status ?? null,
+    startedAt: snapshot?.startedAt ?? null,
     endsAt: snapshot?.endsAt ?? null,
     fetchedAt: snapshot?.fetchedAt ?? null,
     syncIssue: stale,
