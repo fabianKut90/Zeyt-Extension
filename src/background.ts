@@ -27,6 +27,9 @@ import type { FocusStateSnapshot, SWMessage, SWMessageResult } from './types';
 // Worker URL is fixed per deployment — users never configure this
 export const WORKER_URL = 'https://focuslink.fabian-kutschera.workers.dev';
 
+// In-memory: track previous blocking state to detect transitions
+let _wasBlocking = false;
+
 const BLOCKLIST_ALARM   = 'zeyt_blocklist';
 const PAIRING_ALARM     = 'zeyt_pair_poll';
 
@@ -137,9 +140,34 @@ async function applyFocusState(isBlocking: boolean, domains: string[]): Promise<
   if (isBlocking) {
     await updateBlockRules(domains);
     await setBadge('ON', '#ef4444');
+    // On transition to blocking: redirect any already-open tabs that match the block list.
+    // declarativeNetRequest only intercepts new navigations — existing tabs need explicit redirect.
+    if (!_wasBlocking) {
+      await redirectMatchingTabs(domains);
+    }
   } else {
     await clearBlockRules();
     await setBadge('', '#6b7280');
+  }
+  _wasBlocking = isBlocking;
+}
+
+async function redirectMatchingTabs(domains: string[]): Promise<void> {
+  const tabs = await chrome.tabs.query({});
+  const blockedPage = chrome.runtime.getURL('blocked.html');
+
+  for (const tab of tabs) {
+    if (!tab.url || !tab.id) continue;
+    if (tab.url.startsWith('chrome-extension://') || tab.url.startsWith('chrome://')) continue;
+    try {
+      const hostname = new URL(tab.url).hostname;
+      const isBlocked = domains.some(d => hostname === d || hostname.endsWith(`.${d}`));
+      if (isBlocked) {
+        await chrome.tabs.update(tab.id, {
+          url: `${blockedPage}?url=${encodeURIComponent(tab.url)}`,
+        });
+      }
+    } catch { /* invalid URL — ignore */ }
   }
 }
 
