@@ -2,130 +2,223 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>zeyt</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
 
       body {
-        width: 300px;
-        min-height: 180px;
-        padding: 16px;
+        width: 320px;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        font-size: 14px;
-        color: #111827;
-        background: #fff;
+        background: #F9F8F6;
+        color: #1C1C1E;
+        transition: background 0.25s ease, color 0.25s ease;
       }
 
+      /* ── Mode skins ─────────────────────────────────────────────────────── */
+      body.still-mode  { background: #3A4F3F; color: #F5EDE0; }
+      body.open-mode   { background: #F9F8F6; color: #1C1C1E; }
+
+      /* ── Header ─────────────────────────────────────────────────────────── */
       .header {
         display: flex;
         align-items: center;
         gap: 8px;
-        margin-bottom: 14px;
+        padding: 16px 16px 0;
       }
-      .header img { width: 24px; height: 24px; border-radius: 5px; }
-      .header-title { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+      .header img   { width: 28px; height: 28px; border-radius: 7px; }
+      .header-name  { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; flex: 1; }
 
-      .badge {
+      .link-indicator {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        padding: 3px 8px;
+        border-radius: 99px;
+      }
+      .link-indicator.on  { background: rgba(196,149,106,0.18); color: #C4956A; }
+      .link-indicator.off { background: rgba(0,0,0,0.06); color: #9CA3AF; }
+      .still-mode .link-indicator.on { background: rgba(196,149,106,0.25); }
+
+      /* ── State block ─────────────────────────────────────────────────────── */
+      .state-block { padding: 20px 16px 4px; }
+
+      .state-eyebrow {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+      .still-mode  .state-eyebrow { color: #C4956A; }
+      .open-mode   .state-eyebrow { color: #9CA3AF; }
+
+      .state-title {
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: -0.6px;
+        line-height: 1.05;
+        margin-bottom: 8px;
+      }
+      .still-mode  .state-title { color: #F5EDE0; }
+      .open-mode   .state-title { color: #1C1C1E; }
+
+      .state-sub {
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .still-mode  .state-sub { color: rgba(245,237,224,0.65); }
+      .open-mode   .state-sub { color: #6B7280; }
+
+      /* ── Unlock chip ─────────────────────────────────────────────────────── */
+      .unlock-chip {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        padding: 2px 10px;
-        border-radius: 9999px;
+        gap: 6px;
+        margin-top: 14px;
+        padding: 7px 12px;
+        border-radius: 99px;
+        background: rgba(255,255,255,0.09);
         font-size: 12px;
         font-weight: 600;
+        color: #C4956A;
       }
-      .badge-blocking { background: #fee2e2; color: #b91c1c; }
-      .badge-idle     { background: #f3f4f6; color: #6b7280; }
-      .badge-warning  { background: #fef3c7; color: #92400e; }
-      .badge-linked   { background: #d1fae5; color: #065f46; }
+      .unlock-chip svg { width: 13px; height: 13px; flex-shrink: 0; }
 
-      .status-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 10px;
-      }
+      /* ── Divider ─────────────────────────────────────────────────────────── */
+      .divider { height: 1px; margin: 14px 16px 0; }
+      .still-mode .divider { background: rgba(255,255,255,0.1); }
+      .open-mode  .divider { background: #E5E7EB; }
 
-      .hint {
-        font-size: 12px;
-        color: #9ca3af;
-        margin-top: 6px;
-        line-height: 1.4;
-      }
+      /* ── Footer ──────────────────────────────────────────────────────────── */
+      .footer { padding: 10px 16px 14px; }
 
-      .delay-note {
-        font-size: 11px;
-        color: #d1d5db;
-        margin-top: 8px;
-        line-height: 1.4;
-      }
-
-      button {
+      .btn-settings {
         width: 100%;
-        padding: 8px 14px;
+        padding: 10px;
         border: none;
-        border-radius: 6px;
+        border-radius: 9px;
         cursor: pointer;
         font-size: 13px;
-        font-weight: 500;
-        margin-top: 10px;
-        transition: background 0.15s;
+        font-weight: 600;
+        font-family: inherit;
+        transition: opacity 0.15s;
       }
-      .btn-primary { background: #3A4F3F; color: #fff; }
-      .btn-primary:hover { background: #2e3f33; }
-      .btn-ghost { background: #f3f4f6; color: #374151; }
-      .btn-ghost:hover { background: #e5e7eb; }
-
-      #qr-wrap {
-        display: none;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
-        margin-top: 12px;
+      .still-mode .btn-settings {
+        background: rgba(255,255,255,0.11);
+        color: #F5EDE0;
       }
-      #qr-wrap canvas { border-radius: 6px; }
-      .timer { font-size: 12px; color: #9ca3af; }
+      .still-mode .btn-settings:hover { background: rgba(255,255,255,0.17); }
+      .open-mode  .btn-settings {
+        background: #3A4F3F;
+        color: #fff;
+      }
+      .open-mode  .btn-settings:hover { opacity: 0.88; }
 
-      .separator { height: 1px; background: #f3f4f6; margin: 12px 0; }
+      .sync-note {
+        text-align: center;
+        font-size: 10px;
+        margin-top: 7px;
+      }
+      .still-mode .sync-note { color: rgba(245,237,224,0.3); }
+      .open-mode  .sync-note { color: #D1D5DB; }
 
-      #error-msg { color: #b91c1c; font-size: 12px; margin-top: 6px; display: none; }
+      /* ── Pairing view ────────────────────────────────────────────────────── */
+      .pairing-wrap { padding: 16px; text-align: center; }
+      .pairing-title { font-size: 14px; font-weight: 700; color: #1C1C1E; margin-bottom: 4px; }
+      .pairing-sub   { font-size: 12px; color: #9CA3AF; margin-bottom: 14px; line-height: 1.5; }
+      #qr-wrap { display: none; flex-direction: column; align-items: center; gap: 6px; }
+      #qr-wrap canvas { border-radius: 8px; }
+      .qr-timer { font-size: 11px; color: #9CA3AF; }
+
+      /* ── Unlinked view ───────────────────────────────────────────────────── */
+      .unlinked-wrap { padding: 24px 16px 20px; text-align: center; }
+      .unlinked-logo { width: 52px; height: 52px; border-radius: 13px; margin-bottom: 14px; opacity: 0.5; }
+      .unlinked-title { font-size: 15px; font-weight: 700; color: #1C1C1E; margin-bottom: 6px; }
+      .unlinked-sub   { font-size: 12px; color: #9CA3AF; margin-bottom: 18px; line-height: 1.55; }
+
+      .btn-primary {
+        width: 100%;
+        padding: 11px;
+        background: #3A4F3F;
+        color: #fff;
+        border: none;
+        border-radius: 9px;
+        font-size: 14px;
+        font-weight: 700;
+        font-family: inherit;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      .btn-primary:hover    { opacity: 0.88; }
+      .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+      #error-msg { color: #b91c1c; font-size: 12px; margin-top: 8px; display: none; }
+
+      /* ── Loading ─────────────────────────────────────────────────────────── */
+      .loading-wrap { padding: 36px 16px; text-align: center; color: #D1D5DB; font-size: 13px; }
     </style>
   </head>
-  <body>
-    <div class="header">
-      <img src="icons/icon48.png" alt="zeyt" />
-      <span class="header-title">zeyt</span>
-    </div>
+  <body class="open-mode">
 
+    <!-- ── Paired ── -->
     <div id="view-paired" style="display:none">
-      <div class="status-row">
-        <span class="badge badge-linked">Linked</span>
-        <span id="focus-badge"></span>
+      <div class="header">
+        <img src="icons/icon48.png" alt="zeyt" />
+        <span class="header-name">zeyt</span>
+        <span class="link-indicator on">Linked</span>
       </div>
-      <p class="hint" id="focus-hint"></p>
-      <p class="delay-note">Syncs when you open this popup or visit a blocked site</p>
-      <div class="separator"></div>
-      <button class="btn-ghost" id="btn-settings">Settings →</button>
+
+      <div class="state-block">
+        <div class="state-eyebrow" id="state-eyebrow">Mode</div>
+        <div class="state-title"   id="state-title">—</div>
+        <div class="state-sub"     id="state-sub">—</div>
+        <div class="unlock-chip" id="unlock-chip" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="5" y="11" width="14" height="10" rx="2"/>
+            <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+          </svg>
+          Unlock with NFC tap on your phone
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="footer">
+        <button class="btn-settings" id="btn-settings">Settings →</button>
+        <div class="sync-note">Syncs on open · checks state when visiting blocked sites</div>
+      </div>
     </div>
 
+    <!-- ── Pairing ── -->
     <div id="view-pairing" style="display:none">
-      <p style="color:#374151; margin-bottom:4px;">Scan with the zeyt app on your phone:</p>
-      <div id="qr-wrap">
-        <canvas id="qr-canvas"></canvas>
-        <span class="timer" id="qr-timer"></span>
+      <div class="header">
+        <img src="icons/icon48.png" alt="zeyt" />
+        <span class="header-name">zeyt</span>
       </div>
-      <p class="hint">Open zeyt on your phone and scan this code to link your devices.</p>
+      <div class="pairing-wrap">
+        <div class="pairing-title">Scan with zeyt on your phone</div>
+        <div class="pairing-sub">Open zeyt → Settings → Browser Extension, then scan this code.</div>
+        <div id="qr-wrap">
+          <canvas id="qr-canvas"></canvas>
+          <span class="qr-timer" id="qr-timer"></span>
+        </div>
+      </div>
     </div>
 
+    <!-- ── Unlinked ── -->
     <div id="view-unlinked" style="display:none">
-      <p class="hint" style="margin-bottom:4px;">No phone linked yet.</p>
-      <button class="btn-primary" id="btn-pair">Link Phone App</button>
-      <p id="error-msg"></p>
+      <div class="unlinked-wrap">
+        <img class="unlinked-logo" src="icons/icon48.png" alt="zeyt" />
+        <div class="unlinked-title">No phone linked yet</div>
+        <div class="unlinked-sub">Link zeyt on your phone to block distracting sites whenever a focus session is active.</div>
+        <button class="btn-primary" id="btn-pair">Link Phone App</button>
+        <p id="error-msg"></p>
+      </div>
     </div>
 
+    <!-- ── Loading ── -->
     <div id="view-loading">
-      <p class="hint">Loading…</p>
+      <div class="loading-wrap">Loading…</div>
     </div>
 
     <script src="../popup.js" type="module"></script>

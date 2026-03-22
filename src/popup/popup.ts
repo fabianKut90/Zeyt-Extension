@@ -18,15 +18,12 @@ async function sendToSW(message: SWMessage): Promise<SWMessageResult> {
 }
 
 async function init(): Promise<void> {
-  // POLL_NOW fetches fresh state from Cloudflare then returns STATUS —
-  // this is the primary delivery path; the 10-min background alarm is just a fallback.
   const result = await sendToSW({ type: 'POLL_NOW' });
   if (result.type !== 'STATUS') return;
 
   if (result.isPaired) {
     renderPaired(result);
   } else if (result.pairingStatus === 'pending') {
-    // Pairing in progress — show QR from stored session
     const config = await chrome.storage.local.get('config');
     const pairing = config.config?.pairing;
     if (pairing) {
@@ -42,52 +39,46 @@ async function init(): Promise<void> {
 function renderPaired(status: Extract<SWMessageResult, { type: 'STATUS' }>): void {
   show('view-paired');
 
-  const focusBadge = $('focus-badge');
-  const focusHint = $('focus-hint');
-
   if (status.isBlocking) {
-    const endsText = status.endsAt
-      ? ` until ${new Date(status.endsAt).toLocaleTimeString()}`
-      : ' (NFC unlock required)';
-    focusBadge.innerHTML = `<span class="badge badge-blocking">Blocking${endsText}</span>`;
-    focusHint.textContent = 'Websites in your block list are currently blocked.';
+    document.body.className = 'still-mode';
+    $('state-eyebrow').textContent = 'Active';
+    $('state-title').textContent   = 'Still mode';
+    $('state-sub').textContent     = 'Distracting sites are blocked on this Mac.';
+    $('unlock-chip').style.display = 'inline-flex';
   } else {
-    focusBadge.innerHTML = `<span class="badge badge-idle">Idle</span>`;
-    focusHint.textContent = 'No active focus session.';
+    document.body.className = 'open-mode';
+    $('state-eyebrow').textContent = 'Status';
+    $('state-title').textContent   = 'Open mode';
+    $('state-sub').textContent     = 'No active focus session.';
+    $('unlock-chip').style.display = 'none';
   }
 
   if (status.syncIssue) {
-    focusBadge.innerHTML += ` <span class="badge badge-warning">Sync issue</span>`;
+    $('state-sub').textContent += ' (sync issue — check connection)';
   }
 }
 
 async function renderPairingQR(qrPayload: string, expiresAt: number): Promise<void> {
   show('view-pairing');
+  document.body.className = 'open-mode';
+
   const canvas = $('qr-canvas') as HTMLCanvasElement;
   const qrWrap = $('qr-wrap');
-
   qrWrap.style.display = 'flex';
   await QRCode.toCanvas(canvas, qrPayload, { width: 220, margin: 1 });
 
-  // Countdown timer
   const timerEl = $('qr-timer');
   const tick = () => {
-    const secondsLeft = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
-    timerEl.textContent = secondsLeft > 0 ? `Expires in ${secondsLeft}s` : 'Expired';
+    const s = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+    timerEl.textContent = s > 0 ? `Expires in ${s}s` : 'Expired';
   };
   tick();
   const interval = setInterval(tick, 1000);
+  window.addEventListener('unload', () => clearInterval(interval), { once: true });
 
-  // Listen for pairing completion from SW
   chrome.runtime.onMessage.addListener((msg: SWMessageResult) => {
-    if (msg.type === 'PAIRING_COMPLETE') {
-      clearInterval(interval);
-      init(); // Re-render as paired
-    }
-    if (msg.type === 'PAIRING_EXPIRED') {
-      clearInterval(interval);
-      show('view-unlinked');
-    }
+    if (msg.type === 'PAIRING_COMPLETE') { clearInterval(interval); init(); }
+    if (msg.type === 'PAIRING_EXPIRED')  { clearInterval(interval); show('view-unlinked'); }
   });
 }
 
@@ -109,8 +100,6 @@ $('btn-pair').addEventListener('click', async () => {
   }
 });
 
-$('btn-settings').addEventListener('click', () => {
-  chrome.runtime.openOptionsPage();
-});
+$('btn-settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 init();
