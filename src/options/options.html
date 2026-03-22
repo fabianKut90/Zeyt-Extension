@@ -21,6 +21,17 @@
       .btn-danger { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
       .btn-danger:hover:not(:disabled) { background: #fee2e2; }
       .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+      .domain-list { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+      .domain-tag {
+        display: inline-block;
+        padding: 3px 10px;
+        background: rgba(58,79,63,0.08);
+        color: #3A4F3F;
+        border-radius: 99px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .empty-hint { font-size: 12px; color: #9ca3af; margin-top: 8px; }
     </style>
   </head>
   <body>
@@ -36,6 +47,13 @@
         Open the zeyt popup to pair with your phone app via QR code.
         The block list is managed in the zeyt phone app — changes sync automatically.
       </p>
+    </div>
+
+    <div class="card">
+      <h2>Blocked Sites</h2>
+      <p class="hint">Managed in the zeyt phone app. Syncs automatically when you open this page.</p>
+      <div class="domain-list" id="domain-list"></div>
+      <p class="empty-hint" id="domain-empty" style="display:none">No sites in your block list yet. Add them in the zeyt app.</p>
     </div>
 
     <div class="card">
