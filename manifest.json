@@ -2,14 +2,13 @@
   "manifest_version": 3,
   "name": "zeyt",
   "version": "1.0.0",
-  "description": "Blocks distracting websites on your laptop when a zeyt focus session is active on your phone.",
+  "description": "Blocks distracting websites on your laptop when a zeyt focus session is active on your phone. Uses Chrome's declarativeNetRequest API to redirect blocked sites to a local block page — no browsing data is ever read, stored, or transmitted.",
 
   "permissions": [
     "storage",
     "alarms",
     "tabs",
     "declarativeNetRequest",
-    "declarativeNetRequestFeedback",
     "notifications"
   ],
 

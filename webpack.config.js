@@ -1,7 +1,10 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 
-module.exports = {
+module.exports = (env, argv) => ({
+  // 'eval' (webpack's default for dev) is blocked by Chrome extension CSP.
+  // 'cheap-module-source-map' writes source maps as separate files — CSP-safe.
+  devtool: argv.mode === 'production' ? false : 'cheap-module-source-map',
   entry: {
     background: './src/background.ts',
     popup: './src/popup/popup.ts',
@@ -39,4 +42,4 @@ module.exports = {
   optimization: {
     splitChunks: false,
   },
-};
+});

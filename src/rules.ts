@@ -3,6 +3,11 @@
 
 const BASE_RULE_ID = 1000; // Avoid collisions with any future static rules
 
+/** Escape all regex special characters in a domain string before inserting into a pattern. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function updateBlockRules(domains: string[]): Promise<void> {
   if (domains.length === 0) {
     await clearBlockRules();
@@ -24,7 +29,7 @@ export async function updateBlockRules(domains: string[]): Promise<void> {
     },
     condition: {
       // Matches domain and all subdomains (www.domain, sub.domain, etc.)
-      regexFilter: `^https?://([a-z0-9-]+\\.)*${domain.replace(/\./g, '\\.')}(/|$|[/?#])`,
+      regexFilter: `^https?://([a-z0-9-]+\\.)*${escapeRegex(domain)}(/|$|[/?#])`,
       resourceTypes: [chrome.declarativeNetRequest.ResourceType.MAIN_FRAME],
     },
   }));

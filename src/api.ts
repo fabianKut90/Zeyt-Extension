@@ -11,6 +11,17 @@ export class APIError extends Error {
   }
 }
 
+const REQUEST_TIMEOUT_MS = 10_000;
+
+/** Wrap a fetch call with an AbortController timeout. */
+function fetchWithTimeout(input: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
 // DOM's Response.json() returns Promise<any> without generics — helper for typed parsing
 async function parseJson<T>(resp: Response): Promise<T> {
   return resp.json() as Promise<T>;
@@ -39,7 +50,7 @@ export class FocusLinkAPI {
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const resp = await fetch(`${this.groupBase}${path}`, {
+    const resp = await fetchWithTimeout(`${this.groupBase}${path}`, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
@@ -69,7 +80,7 @@ export class FocusLinkAPI {
       headers['If-None-Match'] = `"${currentVersion}"`;
     }
 
-    const resp = await fetch(`${this.groupBase}/state`, {
+    const resp = await fetchWithTimeout(`${this.groupBase}/state`, {
       headers: {
         Authorization: `Bearer ${this.deviceToken}`,
         ...headers,
@@ -114,7 +125,7 @@ export async function startPairing(
   workerUrl: string,
   extensionDeviceId: string,
 ): Promise<PairStartResult> {
-  const resp = await fetch(`${workerUrl}/pair/start`, {
+  const resp = await fetchWithTimeout(`${workerUrl}/pair/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ extensionDeviceId }),
@@ -142,7 +153,7 @@ export async function checkPairingStatus(
   groupId: string,
   pairingToken: string,
 ): Promise<PairStatusResult> {
-  const resp = await fetch(
+  const resp = await fetchWithTimeout(
     `${workerUrl}/groups/${groupId}/pair/status?token=${encodeURIComponent(pairingToken)}`,
   );
 
