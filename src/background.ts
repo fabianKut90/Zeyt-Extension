@@ -32,7 +32,7 @@ let _wasBlocking = false;
 
 // In-memory: rate-limit tab-switch state polls (max 1 per 5 min while browsing)
 let _lastPollAt = 0;
-const POLL_RATE_LIMIT_MS = 5 * 60_000;
+const POLL_RATE_LIMIT_MS = 15 * 60_000;
 
 const BLOCKLIST_ALARM   = 'zeyt_blocklist';
 const PAIRING_ALARM     = 'zeyt_pair_poll';
@@ -78,22 +78,29 @@ chrome.tabs.onUpdated.addListener(async (_tabId, info, tab) => {
   } catch { /* invalid URL — ignore */ }
 });
 
-// ─── Tab-switch trigger ───────────────────────────────────────────────────────
+// ─── Window focus trigger ─────────────────────────────────────────────────────
 // Catches the open → still transition: when still mode starts on the phone,
-// the extension has no blocking rules yet so onUpdated never fires for blocked
-// URLs. Polling on tab activation (rate-limited to 1×/5 min) closes that gap
-// without hammering the backend during idle time.
+// the extension has no blocking rules yet so onUpdated never fires.
+//
+// We poll once when the user brings Chrome to the foreground — but ONLY when
+// the extension currently thinks it's in Open mode (isBlocking=false). If
+// we're already blocking, onUpdated + blocked.html "Check now" handles the
+// still → open direction, so no extra requests needed.
+//
+// Rate-limited to once per 15 min to avoid hammering if the user switches
+// windows frequently. Real-world: ~2-4 polls/day during open mode.
 
 async function rateLimitedPoll(): Promise<void> {
   const now = Date.now();
   if (now - _lastPollAt < POLL_RATE_LIMIT_MS) return;
   const config = await getConfig();
   if (!config.groupId || !config.extensionDeviceToken) return;
+  // Skip if already blocking — onUpdated covers that direction
+  if (config.lastFocusState?.isBlocking) return;
   _lastPollAt = now;
   await pollFocusState();
 }
 
-chrome.tabs.onActivated.addListener(() => { rateLimitedPoll(); });
 chrome.windows.onFocusChanged.addListener((windowId) => {
   if (windowId !== chrome.windows.WINDOW_ID_NONE) rateLimitedPoll();
 });
