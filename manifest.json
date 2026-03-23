@@ -10,7 +10,8 @@
     "tabs",
     "declarativeNetRequest",
     "notifications",
-    "scripting"
+    "scripting",
+    "topSites"
   ],
 
   "host_permissions": ["<all_urls>"],

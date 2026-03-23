@@ -35,6 +35,23 @@
         font-weight: 500;
       }
       .empty-hint { font-size: 12px; color: #9ca3af; margin-top: 8px; }
+      .suggestion-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 10px 3px 10px;
+        background: #f3f4f6;
+        color: #374151;
+        border-radius: 99px;
+        font-size: 12px;
+        font-weight: 500;
+        border: 1px dashed #d1d5db;
+      }
+      .suggestion-tag.blocked {
+        background: rgba(58,79,63,0.08);
+        color: #3A4F3F;
+        border: 1px solid rgba(58,79,63,0.15);
+      }
 
       /* ── QR pairing ── */
       #qr-section { margin-top: 14px; text-align: center; display: none; }
@@ -75,6 +92,13 @@
       <p class="hint">Managed in the zeyt app. Syncs automatically when you open this page.</p>
       <div class="domain-list" id="domain-list"></div>
       <p class="empty-hint" id="domain-empty" style="display:none">No sites in your block list yet. Add them in the zeyt app.</p>
+    </div>
+
+    <!-- ── Suggested sites ── -->
+    <div class="card" id="suggestions-card" style="display:none">
+      <h2>Most Visited</h2>
+      <p class="hint">Sites you visit most. Already-blocked ones are highlighted.</p>
+      <div class="domain-list" id="suggestions-list" style="margin-top:10px;"></div>
     </div>
 
     <!-- ── Device ── -->

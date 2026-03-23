@@ -30,6 +30,7 @@ async function init(): Promise<void> {
   }
 
   renderDomains(config.lastBlockList ?? []);
+  await renderSuggestions(config.lastBlockList ?? []);
 
   // Listen for pairing completion from the service worker
   chrome.runtime.onMessage.addListener((msg: SWMessageResult) => {
@@ -119,6 +120,45 @@ function renderDomains(domains: string[]): void {
       .map(d => `<span class="domain-tag">${d}</span>`)
       .join('');
   }
+}
+
+async function renderSuggestions(blockList: string[]): Promise<void> {
+  let sites: chrome.topSites.MostVisitedURL[];
+  try {
+    sites = await chrome.topSites.get();
+  } catch {
+    return; // API unavailable
+  }
+
+  // Extract root domain (strip www.), deduplicate, skip extension/chrome pages
+  const blocked = new Set(blockList.map(d => d.toLowerCase()));
+  const seen = new Set<string>();
+  const domains: { domain: string; isBlocked: boolean }[] = [];
+
+  for (const site of sites) {
+    try {
+      const hostname = new URL(site.url).hostname.toLowerCase().replace(/^www\./, '');
+      if (!hostname || seen.has(hostname)) continue;
+      if (hostname.startsWith('chrome') || hostname === 'newtab') continue;
+      seen.add(hostname);
+      const isBlocked = blocked.has(hostname) || blockList.some(d => hostname.endsWith(`.${d}`));
+      domains.push({ domain: hostname, isBlocked });
+    } catch { /* invalid URL */ }
+  }
+
+  if (domains.length === 0) return;
+
+  // Sort: blocked first, then alphabetical
+  domains.sort((a, b) => Number(b.isBlocked) - Number(a.isBlocked) || a.domain.localeCompare(b.domain));
+
+  const card = $('suggestions-card');
+  const list = $('suggestions-list');
+  card.style.display = '';
+  list.innerHTML = domains
+    .map(({ domain, isBlocked }) =>
+      `<span class="suggestion-tag ${isBlocked ? 'blocked' : ''}" title="${isBlocked ? 'Already blocked' : 'Not yet blocked'}">${isBlocked ? '✓ ' : ''}${domain}</span>`
+    )
+    .join('');
 }
 
 $('btn-pair').addEventListener('click', () => startQRFlow());
