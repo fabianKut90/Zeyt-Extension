@@ -165,7 +165,7 @@ async function scheduleTransitionAlarm(endsAt: number | null): Promise<void> {
 // is about to expire. Self-contained: no content script file needed.
 
 async function injectWarningToast(): Promise<void> {
-  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const tabs = await chrome.tabs.query({ active: true, windowType: 'normal' });
   for (const tab of tabs) {
     if (!tab.id || !tab.url) continue;
     if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
