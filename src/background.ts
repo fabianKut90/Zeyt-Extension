@@ -37,6 +37,7 @@ const POLL_RATE_LIMIT_MS = 30 * 60_000; // timed sessions handled by alarm; only
 const BLOCKLIST_ALARM   = 'zeyt_blocklist';
 const PAIRING_ALARM     = 'zeyt_pair_poll';
 const TRANSITION_ALARM  = 'zeyt_state_transition';
+const WARN_ALARM        = 'zeyt_warn'; // fires 1 min before open session ends
 
 const PAIR_POLL_INTERVAL_S    = 3;
 const BLOCKLIST_REFRESH_MS    = 24 * 60 * 60_000; // 24 hours
@@ -60,6 +61,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === BLOCKLIST_ALARM)  await refreshBlockList();
   if (alarm.name === PAIRING_ALARM)    await pollPairingStatus();
   if (alarm.name === TRANSITION_ALARM) await pollFocusState();
+  if (alarm.name === WARN_ALARM)       await injectWarningToast();
 });
 
 // ─── Navigation trigger ───────────────────────────────────────────────────────
@@ -138,6 +140,7 @@ async function refreshBlockList(): Promise<void> {
 
 async function scheduleTransitionAlarm(endsAt: number | null): Promise<void> {
   await chrome.alarms.clear(TRANSITION_ALARM);
+  await chrome.alarms.clear(WARN_ALARM);
   if (endsAt === null) return;
 
   const delayMs = endsAt - Date.now();
@@ -146,8 +149,80 @@ async function scheduleTransitionAlarm(endsAt: number | null): Promise<void> {
     await pollFocusState();
     return;
   }
+
   // Chrome alarms minimum is 1 min; sub-minute sessions fire ~1 min late (acceptable)
   chrome.alarms.create(TRANSITION_ALARM, { delayInMinutes: Math.max(1, delayMs / 60_000) });
+
+  // Warn 1 minute before session ends — only worth showing if there's >2 min left
+  const warnDelayMs = delayMs - 60_000;
+  if (warnDelayMs > 60_000) {
+    chrome.alarms.create(WARN_ALARM, { delayInMinutes: warnDelayMs / 60_000 });
+  }
+}
+
+// ─── 1-minute warning toast ────────────────────────────────────────────────────
+// Injects a small branded overlay into all visible tabs when the open session
+// is about to expire. Self-contained: no content script file needed.
+
+async function injectWarningToast(): Promise<void> {
+  const tabs = await chrome.tabs.query({ active: true });
+  for (const tab of tabs) {
+    if (!tab.id || !tab.url) continue;
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: false },
+        func: () => {
+          const ID = 'zeyt-warning-toast';
+          if (document.getElementById(ID)) return; // already shown
+
+          const toast = document.createElement('div');
+          toast.id = ID;
+          toast.innerHTML = `
+            <span style="font-size:15px;line-height:1">⏱</span>
+            <span><strong style="font-weight:700">1 minute left</strong> · zeyt open mode ends soon</span>
+            <button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;font-size:18px;cursor:pointer;padding:0;margin-left:4px;opacity:.7;line-height:1">×</button>
+          `;
+          Object.assign(toast.style, {
+            position: 'fixed',
+            top: '16px',
+            left: '50%',
+            transform: 'translateX(-50%) translateY(-80px)',
+            zIndex: '2147483647',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            background: '#3A4F3F',
+            color: '#F5F0E8',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            fontSize: '14px',
+            padding: '12px 18px',
+            borderRadius: '100px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.25)',
+            transition: 'transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
+            whiteSpace: 'nowrap',
+          });
+          document.body.appendChild(toast);
+
+          // Animate in
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              toast.style.transform = 'translateX(-50%) translateY(0)';
+            });
+          });
+
+          // Auto-dismiss after 10s
+          setTimeout(() => {
+            toast.style.transform = 'translateX(-50%) translateY(-80px)';
+            toast.style.transition = 'transform 0.3s ease-in';
+            setTimeout(() => toast.remove(), 350);
+          }, 10_000);
+        },
+      });
+    } catch {
+      // Tab may have navigated or be restricted — ignore
+    }
+  }
 }
 
 async function pollFocusState(): Promise<void> {
@@ -307,6 +382,7 @@ chrome.runtime.onMessage.addListener(
         }
         case 'UNPAIR': {
           await chrome.alarms.clear(TRANSITION_ALARM);
+          await chrome.alarms.clear(WARN_ALARM);
           await clearPairing();
           await clearBlockRules();
           await setBadge('', '#6b7280');
