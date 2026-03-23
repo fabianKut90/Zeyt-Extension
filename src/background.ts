@@ -211,12 +211,12 @@ async function injectWarningToast(): Promise<void> {
             });
           });
 
-          // Auto-dismiss after 10s
+          // Auto-dismiss after 5s
           setTimeout(() => {
             toast.style.transform = 'translateX(-50%) translateY(-80px)';
             toast.style.transition = 'transform 0.3s ease-in';
             setTimeout(() => toast.remove(), 350);
-          }, 10_000);
+          }, 5_000);
         },
       });
     } catch {
