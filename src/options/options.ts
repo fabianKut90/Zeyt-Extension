@@ -153,12 +153,28 @@ async function renderSuggestions(blockList: string[]): Promise<void> {
 
   const card = $('suggestions-card');
   const list = $('suggestions-list');
-  card.style.display = '';
+  const body = $('suggestions-body');
+  const toggleBtn = $('btn-toggle-suggestions') as HTMLButtonElement;
+
   list.innerHTML = domains
     .map(({ domain, isBlocked }) =>
       `<span class="suggestion-tag ${isBlocked ? 'blocked' : ''}" title="${isBlocked ? 'Already blocked' : 'Not yet blocked'}">${isBlocked ? '✓ ' : ''}${domain}</span>`
     )
     .join('');
+
+  // Restore visibility preference
+  const { suggestionsVisible } = await chrome.storage.local.get('suggestionsVisible');
+  const visible = suggestionsVisible === true;
+  body.style.display = visible ? '' : 'none';
+  toggleBtn.textContent = visible ? 'Hide' : 'Show';
+  card.style.display = '';
+
+  toggleBtn.addEventListener('click', async () => {
+    const nowVisible = body.style.display === 'none';
+    body.style.display = nowVisible ? '' : 'none';
+    toggleBtn.textContent = nowVisible ? 'Hide' : 'Show';
+    await chrome.storage.local.set({ suggestionsVisible: nowVisible });
+  });
 }
 
 $('btn-pair').addEventListener('click', () => startQRFlow());
