@@ -30,6 +30,10 @@ export const WORKER_URL = 'https://focus.zeyt.io';
 // In-memory: track previous blocking state to detect transitions
 let _wasBlocking = false;
 
+// In-memory: rate-limit tab-switch state polls (max 1 per 5 min while browsing)
+let _lastPollAt = 0;
+const POLL_RATE_LIMIT_MS = 5 * 60_000;
+
 const BLOCKLIST_ALARM   = 'zeyt_blocklist';
 const PAIRING_ALARM     = 'zeyt_pair_poll';
 
@@ -72,6 +76,26 @@ chrome.tabs.onUpdated.addListener(async (_tabId, info, tab) => {
     const relevant = blockList.some(d => hostname === d || hostname.endsWith(`.${d}`));
     if (relevant) await pollFocusState();
   } catch { /* invalid URL — ignore */ }
+});
+
+// ─── Tab-switch trigger ───────────────────────────────────────────────────────
+// Catches the open → still transition: when still mode starts on the phone,
+// the extension has no blocking rules yet so onUpdated never fires for blocked
+// URLs. Polling on tab activation (rate-limited to 1×/5 min) closes that gap
+// without hammering the backend during idle time.
+
+async function rateLimitedPoll(): Promise<void> {
+  const now = Date.now();
+  if (now - _lastPollAt < POLL_RATE_LIMIT_MS) return;
+  const config = await getConfig();
+  if (!config.groupId || !config.extensionDeviceToken) return;
+  _lastPollAt = now;
+  await pollFocusState();
+}
+
+chrome.tabs.onActivated.addListener(() => { rateLimitedPoll(); });
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) rateLimitedPoll();
 });
 
 // ─── Block list ───────────────────────────────────────────────────────────────
