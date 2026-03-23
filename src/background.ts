@@ -32,10 +32,11 @@ let _wasBlocking = false;
 
 // In-memory: rate-limit tab-switch state polls (max 1 per 5 min while browsing)
 let _lastPollAt = 0;
-const POLL_RATE_LIMIT_MS = 15 * 60_000;
+const POLL_RATE_LIMIT_MS = 30 * 60_000; // timed sessions handled by alarm; only fallback for indefinite
 
 const BLOCKLIST_ALARM   = 'zeyt_blocklist';
 const PAIRING_ALARM     = 'zeyt_pair_poll';
+const TRANSITION_ALARM  = 'zeyt_state_transition';
 
 const PAIR_POLL_INTERVAL_S    = 3;
 const BLOCKLIST_REFRESH_MS    = 24 * 60 * 60_000; // 24 hours
@@ -56,8 +57,9 @@ chrome.runtime.onStartup.addListener(async () => {
 // ─── Alarms ───────────────────────────────────────────────────────────────────
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === BLOCKLIST_ALARM) await refreshBlockList();
-  if (alarm.name === PAIRING_ALARM)   await pollPairingStatus();
+  if (alarm.name === BLOCKLIST_ALARM)  await refreshBlockList();
+  if (alarm.name === PAIRING_ALARM)    await pollPairingStatus();
+  if (alarm.name === TRANSITION_ALARM) await pollFocusState();
 });
 
 // ─── Navigation trigger ───────────────────────────────────────────────────────
@@ -95,8 +97,10 @@ async function rateLimitedPoll(): Promise<void> {
   if (now - _lastPollAt < POLL_RATE_LIMIT_MS) return;
   const config = await getConfig();
   if (!config.groupId || !config.extensionDeviceToken) return;
-  // Skip if already blocking — onUpdated covers that direction
+  // Skip if already blocking — onUpdated + blocked.html covers that direction
   if (config.lastFocusState?.isBlocking) return;
+  // Skip if a known end time exists — transition alarm fires at exactly the right moment
+  if (config.lastFocusState?.endsAt != null) return;
   _lastPollAt = now;
   await pollFocusState();
 }
@@ -132,6 +136,20 @@ async function refreshBlockList(): Promise<void> {
 
 // ─── Focus state ──────────────────────────────────────────────────────────────
 
+async function scheduleTransitionAlarm(endsAt: number | null): Promise<void> {
+  await chrome.alarms.clear(TRANSITION_ALARM);
+  if (endsAt === null) return;
+
+  const delayMs = endsAt - Date.now();
+  if (delayMs <= 0) {
+    // Session already ended — poll immediately to get fresh state
+    await pollFocusState();
+    return;
+  }
+  // Chrome alarms minimum is 1 min; sub-minute sessions fire ~1 min late (acceptable)
+  chrome.alarms.create(TRANSITION_ALARM, { delayInMinutes: Math.max(1, delayMs / 60_000) });
+}
+
 async function pollFocusState(): Promise<void> {
   const config = await getConfig();
   if (!config.groupId || !config.extensionDeviceToken) return;
@@ -146,6 +164,7 @@ async function pollFocusState(): Promise<void> {
       // (block list may have been refreshed independently since last apply)
       if (config.lastFocusState) {
         await setConfig({ lastFocusState: { ...config.lastFocusState, fetchedAt: Date.now() } });
+        await scheduleTransitionAlarm(config.lastFocusState.endsAt);
         await applyFocusState(config.lastFocusState.isBlocking, config.lastBlockList ?? []);
       }
       return;
@@ -162,6 +181,7 @@ async function pollFocusState(): Promise<void> {
     };
 
     await setConfig({ lastFocusState: snapshot });
+    await scheduleTransitionAlarm(snapshot.endsAt);
     await applyFocusState(state.isBlocking, config.lastBlockList ?? []);
   } catch (err) {
     console.error('[zeyt] State poll failed:', err);
@@ -286,6 +306,7 @@ chrome.runtime.onMessage.addListener(
           break;
         }
         case 'UNPAIR': {
+          await chrome.alarms.clear(TRANSITION_ALARM);
           await clearPairing();
           await clearBlockRules();
           await setBadge('', '#6b7280');
