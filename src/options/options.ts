@@ -80,7 +80,7 @@ async function startQRFlow(): Promise<void> {
     return;
   }
 
-  $('qr-section').style.display = '';
+  $('qr-section').style.display = 'block';
   $('btn-pair').style.display = 'none';
 
   const canvas = $('qr-canvas') as HTMLCanvasElement;
@@ -98,7 +98,7 @@ async function startQRFlow(): Promise<void> {
 
 function onPairingComplete(): void {
   if (qrTimerInterval) { clearInterval(qrTimerInterval); qrTimerInterval = null; }
-  $('qr-section').style.display = '';
+  $('qr-section').style.display = 'block';
   ($('qr-canvas') as HTMLCanvasElement).style.display = 'none';
   ($('qr-timer') as HTMLElement).style.display = 'none';
   ($('qr-success') as HTMLElement).style.display = '';
