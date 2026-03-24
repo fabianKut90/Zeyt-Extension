@@ -132,6 +132,12 @@ async function refreshBlockList(): Promise<void> {
       blockListFetchedAt: Date.now(),
     });
   } catch (err) {
+    if (err instanceof APIError && (err.status === 401 || err.status === 403)) {
+      await clearPairing();
+      await clearBlockRules();
+      await setBadge('', '#6b7280');
+      return;
+    }
     console.warn('[zeyt] Block list refresh failed:', err);
   }
 }
@@ -259,6 +265,13 @@ async function pollFocusState(): Promise<void> {
     await scheduleTransitionAlarm(snapshot.endsAt);
     await applyFocusState(state.isBlocking, config.lastBlockList ?? []);
   } catch (err) {
+    if (err instanceof APIError && (err.status === 401 || err.status === 403)) {
+      // Credentials rejected — app was uninstalled or device revoked
+      await clearPairing();
+      await clearBlockRules();
+      await setBadge('', '#6b7280');
+      return;
+    }
     console.error('[zeyt] State poll failed:', err);
     await applyFailClosed();
     await setBadge('!', '#f59e0b');

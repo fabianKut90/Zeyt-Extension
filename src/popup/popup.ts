@@ -21,14 +21,14 @@ async function sendToSW(message: SWMessage): Promise<SWMessageResult> {
 }
 
 async function init(): Promise<void> {
-  const result = await sendToSW({ type: 'POLL_NOW' });
-  if (result.type !== 'STATUS') return;
-
-  if (result.isPaired) {
-    renderPaired(result);
-  } else {
-    show('view-unlinked');
+  // Render immediately from cached state — no network wait
+  const cached = await sendToSW({ type: 'GET_STATUS' });
+  if (cached.type === 'STATUS') {
+    cached.isPaired ? renderPaired(cached) : show('view-unlinked');
   }
+
+  // Background poll — silently refreshes state + block list
+  sendToSW({ type: 'POLL_NOW' }).catch(() => {});
 }
 
 function renderPaired(status: Extract<SWMessageResult, { type: 'STATUS' }>): void {
