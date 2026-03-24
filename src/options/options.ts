@@ -176,6 +176,29 @@ async function renderSuggestions(blockList: string[]): Promise<void> {
   toggleBtn.textContent = visible ? 'Hide' : 'Show';
   card.style.display = '';
 
+  // "Scan to add" button — QR encodes non-blocked suggestions as a zeyt deeplink
+  const nonBlocked = domains.filter(d => !d.isBlocked).map(d => d.domain);
+  const suggestBtn = $('btn-suggest-qr') as HTMLButtonElement;
+  const suggestQrSection = $('suggest-qr-section');
+  const suggestQrClose = $('btn-suggest-qr-close');
+
+  if (nonBlocked.length > 0) {
+    suggestBtn.style.display = 'block';
+    suggestBtn.onclick = async () => {
+      const deeplink = `zeyt://suggest?domains=${nonBlocked.join(',')}`;
+      const canvas = $('suggest-qr-canvas') as HTMLCanvasElement;
+      await QRCode.toCanvas(canvas, deeplink, { width: 180, margin: 1 });
+      suggestQrSection.style.display = 'block';
+      suggestBtn.style.display = 'none';
+    };
+    suggestQrClose.onclick = () => {
+      suggestQrSection.style.display = 'none';
+      suggestBtn.style.display = 'block';
+    };
+  } else {
+    suggestBtn.style.display = 'none';
+  }
+
   toggleBtn.onclick = async () => {
     const nowVisible = body.style.display === 'none';
     body.style.display = nowVisible ? 'block' : 'none';
