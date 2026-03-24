@@ -176,12 +176,12 @@ async function renderSuggestions(blockList: string[]): Promise<void> {
   toggleBtn.textContent = visible ? 'Hide' : 'Show';
   card.style.display = '';
 
-  toggleBtn.addEventListener('click', async () => {
+  toggleBtn.onclick = async () => {
     const nowVisible = body.style.display === 'none';
-    body.style.display = nowVisible ? '' : 'none';
+    body.style.display = nowVisible ? 'block' : 'none';
     toggleBtn.textContent = nowVisible ? 'Hide' : 'Show';
     await chrome.storage.local.set({ suggestionsVisible: nowVisible });
-  });
+  };
 }
 
 $('btn-pair').addEventListener('click', () => startQRFlow());
