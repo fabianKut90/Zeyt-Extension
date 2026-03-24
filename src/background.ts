@@ -270,6 +270,7 @@ async function pollFocusState(): Promise<void> {
       await clearPairing();
       await clearBlockRules();
       await setBadge('', '#6b7280');
+      await notifyPopup({ type: 'UNLINKED' });
       return;
     }
     console.error('[zeyt] State poll failed:', err);

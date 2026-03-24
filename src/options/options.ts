@@ -6,10 +6,7 @@ const $ = (id: string) => document.getElementById(id)!;
 
 let qrTimerInterval: ReturnType<typeof setInterval> | null = null;
 
-async function init(): Promise<void> {
-  // Refresh block list + state on page open
-  chrome.runtime.sendMessage({ type: 'POLL_NOW' }).catch(() => {});
-
+async function renderFromConfig(): Promise<void> {
   const config = await getConfig();
 
   $('device-id').textContent = config.extensionDeviceId;
@@ -17,7 +14,6 @@ async function init(): Promise<void> {
   if (config.groupId) {
     renderLinked(config.groupId);
   } else if (config.pairing?.status === 'pending') {
-    // Pairing already in progress — re-render the QR
     const stored = await chrome.storage.local.get('config');
     const pairing = stored.config?.pairing;
     if (pairing?.pairingToken) {
@@ -31,12 +27,23 @@ async function init(): Promise<void> {
 
   renderDomains(config.lastBlockList ?? []);
   await renderSuggestions(config.lastBlockList ?? []);
+}
 
-  // Listen for pairing completion from the service worker
+async function init(): Promise<void> {
+  // Render from cache immediately
+  await renderFromConfig();
+
+  // Listen for pairing/auth events from the service worker
   chrome.runtime.onMessage.addListener((msg: SWMessageResult) => {
     if (msg.type === 'PAIRING_COMPLETE') onPairingComplete();
     if (msg.type === 'PAIRING_EXPIRED')  onPairingExpired();
+    if (msg.type === 'UNLINKED')         renderUnlinked();
   });
+
+  // Background poll — re-render after it completes so 401 auto-unpair is reflected
+  chrome.runtime.sendMessage({ type: 'POLL_NOW' })
+    .then(() => renderFromConfig())
+    .catch(() => {});
 }
 
 function renderLinked(groupId: string): void {
