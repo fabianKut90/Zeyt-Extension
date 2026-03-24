@@ -60,7 +60,13 @@ chrome.runtime.onStartup.addListener(async () => {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === BLOCKLIST_ALARM)  await refreshBlockList();
   if (alarm.name === PAIRING_ALARM)    await pollPairingStatus();
-  if (alarm.name === TRANSITION_ALARM) await pollFocusState();
+  if (alarm.name === TRANSITION_ALARM) {
+    // Block optimistically first — session has ended, phone may not have pushed yet.
+    // pollFocusState() will confirm (or undo if the session was extended on the phone).
+    const cfg = await getConfig();
+    await applyFocusState(true, cfg.lastBlockList ?? []);
+    await pollFocusState();
+  }
   if (alarm.name === WARN_ALARM)       await injectWarningToast();
 });
 
