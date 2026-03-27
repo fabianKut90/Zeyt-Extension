@@ -100,8 +100,27 @@ export class FocusLinkAPI {
     return parseJson<FocusState>(resp);
   }
 
-  async getBlockList(): Promise<BlockList> {
-    return this.request<BlockList>('/blocklist');
+  async getBlockList(currentVersion?: number): Promise<BlockList | null> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.deviceToken}`,
+    };
+    if (currentVersion !== undefined) {
+      headers['If-None-Match'] = `"${currentVersion}"`;
+    }
+
+    const resp = await fetchWithTimeout(`${this.groupBase}/blocklist`, { headers });
+
+    if (resp.status === 304) return null;
+
+    if (!resp.ok) {
+      const body = await parseJsonOrDefault<{ error: string; message: string }>(resp, {
+        error: 'UNKNOWN',
+        message: `HTTP ${resp.status}`,
+      });
+      throw new APIError(body.error, body.message, resp.status);
+    }
+
+    return parseJson<BlockList>(resp);
   }
 
   async revokeDevice(deviceId: string): Promise<void> {

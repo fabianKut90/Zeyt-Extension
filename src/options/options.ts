@@ -70,12 +70,21 @@ async function startQRFlow(): Promise<void> {
   ($('btn-pair') as HTMLButtonElement).disabled = true;
   ($('qr-error') as HTMLElement).style.display = 'none';
 
-  const result = await chrome.runtime.sendMessage({ type: 'START_PAIRING' }) as SWMessageResult;
-
-  if (result.type !== 'PAIRING_STARTED') {
+  let result: SWMessageResult | undefined;
+  try {
+    result = await chrome.runtime.sendMessage({ type: 'START_PAIRING' });
+  } catch {
     ($('btn-pair') as HTMLButtonElement).disabled = false;
     const errEl = $('qr-error') as HTMLElement;
-    errEl.textContent = result.type === 'ERROR' ? result.message : 'Failed to start pairing.';
+    errEl.textContent = 'Could not reach the extension background. Please try again.';
+    errEl.style.display = '';
+    return;
+  }
+
+  if (!result || result.type !== 'PAIRING_STARTED') {
+    ($('btn-pair') as HTMLButtonElement).disabled = false;
+    const errEl = $('qr-error') as HTMLElement;
+    errEl.textContent = result?.type === 'ERROR' ? (result as any).message : 'Failed to start pairing.';
     errEl.style.display = '';
     return;
   }
@@ -83,8 +92,33 @@ async function startQRFlow(): Promise<void> {
   $('qr-section').style.display = 'block';
   $('btn-pair').style.display = 'none';
 
+  // Try to bake top sites into the pairing QR so the phone can offer them in one scan
+  let domains: string[] = [];
+  try {
+    const topSites = await chrome.topSites.get();
+    const seen = new Set<string>();
+    for (const site of topSites) {
+      try {
+        const hostname = new URL(site.url).hostname.toLowerCase().replace(/^www\./, '');
+        if (!hostname || seen.has(hostname)) continue;
+        if (hostname.startsWith('chrome') || hostname === 'newtab') continue;
+        seen.add(hostname);
+        domains.push(hostname);
+        if (domains.length >= 20) break;
+      } catch { /* invalid URL */ }
+    }
+  } catch { /* topSites permission not granted — domains stays empty */ }
+
+  let qrString = result.qrPayload;
+  if (domains.length > 0) {
+    try {
+      const payload = JSON.parse(qrString) as Record<string, unknown>;
+      qrString = JSON.stringify({ ...payload, d: domains });
+    } catch { /* keep original payload */ }
+  }
+
   const canvas = $('qr-canvas') as HTMLCanvasElement;
-  await QRCode.toCanvas(canvas, result.qrPayload, { width: 200, margin: 1 });
+  await QRCode.toCanvas(canvas, qrString, { width: 200, margin: 1 });
 
   const timerEl = $('qr-timer');
   const expiresAt = result.expiresAt;
@@ -102,7 +136,6 @@ function onPairingComplete(): void {
   ($('qr-canvas') as HTMLCanvasElement).style.display = 'none';
   ($('qr-timer') as HTMLElement).style.display = 'none';
   ($('qr-success') as HTMLElement).style.display = '';
-  // Re-init after short delay to show linked state
   setTimeout(() => init(), 1500);
 }
 

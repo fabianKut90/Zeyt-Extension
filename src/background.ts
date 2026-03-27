@@ -30,28 +30,36 @@ export const WORKER_URL = 'https://focus.zeyt.io';
 // In-memory: track previous blocking state to detect transitions
 let _wasBlocking = false;
 
-// In-memory: rate-limit tab-switch state polls (max 1 per 5 min while browsing)
+// In-memory: rate-limit tab-switch state polls (max 1 per hour while browsing)
 let _lastPollAt = 0;
-const POLL_RATE_LIMIT_MS = 30 * 60_000; // timed sessions handled by alarm; only fallback for indefinite
+const POLL_RATE_LIMIT_MS = 60 * 60_000; // 1 hour — timed sessions handled by alarm
+
+// In-memory: rate-limit POLL_NOW from popup/options (max 1 per 5 min)
+let _lastPollNowAt = 0;
+const POLL_NOW_RATE_LIMIT_MS = 5 * 60_000;
 
 const BLOCKLIST_ALARM   = 'zeyt_blocklist';
 const PAIRING_ALARM     = 'zeyt_pair_poll';
 const TRANSITION_ALARM  = 'zeyt_state_transition';
 const WARN_ALARM        = 'zeyt_warn'; // fires 1 min before open session ends
+const STATE_POLL_ALARM  = 'zeyt_state_poll'; // periodic poll while in open mode
 
-const PAIR_POLL_INTERVAL_S    = 3;
+const PAIR_POLL_INTERVAL_S    = 10;
 const BLOCKLIST_REFRESH_MS    = 24 * 60 * 60_000; // 24 hours
 const STALE_THRESHOLD_MS      = 4  * 60 * 60_000; // 4 hours (fail-closed guard)
+const STATE_POLL_INTERVAL_MIN = 2;               // check for blocking every 2 min
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(async () => {
   chrome.alarms.create(BLOCKLIST_ALARM, { periodInMinutes: 24 * 60 });
+  chrome.alarms.create(STATE_POLL_ALARM, { periodInMinutes: STATE_POLL_INTERVAL_MIN });
   await maybeRefreshBlockList();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   chrome.alarms.create(BLOCKLIST_ALARM, { periodInMinutes: 24 * 60 });
+  chrome.alarms.create(STATE_POLL_ALARM, { periodInMinutes: STATE_POLL_INTERVAL_MIN });
   await maybeRefreshBlockList();
 });
 
@@ -68,6 +76,18 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await pollFocusState();
   }
   if (alarm.name === WARN_ALARM)       await injectWarningToast();
+  if (alarm.name === STATE_POLL_ALARM) {
+    // Periodic background poll — catches the open→blocking transition when no
+    // tab navigation or focus change has occurred (e.g. user already has a
+    // blocked site open when the phone locks).
+    // Only fires when we think we're NOT blocking; declarativeNetRequest + TRANSITION_ALARM
+    // handle the blocking→open direction.
+    const config = await getConfig();
+    if (!config.groupId || !config.extensionDeviceToken) return;
+    if (!config.lastFocusState?.isBlocking) {
+      await pollFocusState();
+    }
+  }
 });
 
 // ─── Navigation trigger ───────────────────────────────────────────────────────
@@ -131,7 +151,8 @@ async function refreshBlockList(): Promise<void> {
   if (!config.groupId || !config.extensionDeviceToken) return;
   const api = new FocusLinkAPI(WORKER_URL, config.groupId, config.extensionDeviceToken);
   try {
-    const blockList = await api.getBlockList();
+    const blockList = await api.getBlockList(config.lastBlockListVersion ?? undefined);
+    if (blockList === null) return; // 304 Not Modified — already up to date
     await setConfig({
       lastBlockList: blockList.domains,
       lastBlockListVersion: blockList.version,
@@ -394,9 +415,19 @@ chrome.runtime.onMessage.addListener(
           break;
         }
         case 'POLL_NOW': {
-          // Popup opened or blocked.html "Check now" — fetch both list and state
-          await refreshBlockList();
-          await pollFocusState();
+          // Popup opened or blocked.html "Check now" — fetch state (and block list if stale)
+          // Rate-limited: blocked.html "Check now" bypasses the limit via force flag
+          const now = Date.now();
+          if (message.force || now - _lastPollNowAt > POLL_NOW_RATE_LIMIT_MS) {
+            _lastPollNowAt = now;
+            // Only refresh block list if it's more than 1 hour old — the 24h alarm handles
+            // scheduled refreshes; refreshing on every poll wastes DO requests.
+            const cfg = await getConfig();
+            if (now - (cfg.blockListFetchedAt ?? 0) > 60 * 60_000) {
+              await refreshBlockList();
+            }
+            await pollFocusState();
+          }
           sendResponse(await handleGetStatus());
           break;
         }
@@ -430,7 +461,12 @@ async function handleStartPairing(): Promise<SWMessageResult> {
     chrome.alarms.create(PAIRING_ALARM, { periodInMinutes: PAIR_POLL_INTERVAL_S / 60 });
     return { type: 'PAIRING_STARTED', qrPayload: result.qrPayload, expiresAt: result.expiresAt };
   } catch (err) {
-    const msg = err instanceof APIError ? err.message : 'Failed to start pairing';
+    const isServerError = err instanceof APIError && err.status >= 500;
+    const msg = isServerError
+      ? 'The zeyt server is temporarily unavailable — please try again in a few minutes.'
+      : err instanceof APIError
+      ? err.message
+      : 'Failed to start pairing.';
     return { type: 'ERROR', message: msg };
   }
 }
