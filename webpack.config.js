@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = (env, argv) => ({
@@ -28,6 +29,10 @@ module.exports = (env, argv) => ({
     extensions: ['.ts', '.js'],
   },
   plugins: [
+    new webpack.EnvironmentPlugin({
+      POSTHOG_KEY: '',
+      POSTHOG_HOST: 'https://eu.i.posthog.com',
+    }),
     new CopyPlugin({
       patterns: [
         { from: 'manifest.json', to: 'manifest.json' },

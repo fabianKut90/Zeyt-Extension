@@ -24,6 +24,16 @@
       .btn-primary { background: #3A4F3F; color: #fff; margin-top: 12px; width: 100%; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; transition: opacity 0.15s; }
       .btn-primary:hover:not(:disabled) { opacity: 0.88; }
       .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+      .btn-secondary {
+        background: transparent;
+        color: #3A4F3F;
+        border: 1px solid #d1d5db;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .btn-secondary:hover:not(:disabled) { background: #f3f4f6; }
+      .btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
       .domain-list { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
       .domain-tag {
         display: inline-block;
@@ -35,6 +45,9 @@
         font-weight: 500;
       }
       .empty-hint { font-size: 12px; color: #9ca3af; margin-top: 8px; }
+      .status-hint { font-size: 12px; margin-top: 8px; line-height: 1.4; }
+      .status-hint.subtle { color: #9ca3af; }
+      .status-hint.success { color: #065f46; }
       .suggestion-tag {
         display: inline-flex;
         align-items: center;
@@ -88,8 +101,12 @@
 
     <!-- ── Blocked sites ── -->
     <div class="card">
-      <h2>Blocked Sites</h2>
+      <div class="row">
+        <h2 style="margin-bottom:0">Blocked Sites</h2>
+        <button id="btn-refresh-domains" class="btn-secondary">Refresh</button>
+      </div>
       <p class="hint">Managed in the zeyt app. Syncs automatically when you open this page.</p>
+      <p class="status-hint subtle" id="blocked-sites-status">Checking for the latest blocked sites…</p>
       <div class="domain-list" id="domain-list"></div>
       <p class="empty-hint" id="domain-empty" style="display:none">No sites in your block list yet. Add them in the zeyt app.</p>
     </div>

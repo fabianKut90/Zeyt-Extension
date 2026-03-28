@@ -7,6 +7,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "posthog-js": "^1.364.1",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {

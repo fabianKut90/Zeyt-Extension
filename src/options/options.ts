@@ -1,10 +1,16 @@
 import QRCode from 'qrcode';
 import { getConfig, clearPairing } from '../storage';
 import type { SWMessageResult } from '../types';
+import { trackEvent } from '../analytics';
 
 const $ = (id: string) => document.getElementById(id)!;
 
 let qrTimerInterval: ReturnType<typeof setInterval> | null = null;
+let qrFlowActive = false;          // true while QR code is displayed — prevents re-render loops
+let refreshDomainsInFlight = false;
+let listenersRegistered = false;
+let hasTrackedBlockListVisible = false;
+let hasTrackedOptionsOpened = false;
 
 async function renderFromConfig(): Promise<void> {
   const config = await getConfig();
@@ -12,7 +18,10 @@ async function renderFromConfig(): Promise<void> {
   $('device-id').textContent = config.extensionDeviceId;
 
   if (config.groupId) {
+    qrFlowActive = false;
     renderLinked(config.groupId);
+  } else if (qrFlowActive) {
+    // QR code is already visible — don't restart the flow (avoids API spam)
   } else if (config.pairing?.status === 'pending') {
     const stored = await chrome.storage.local.get('config');
     const pairing = stored.config?.pairing;
@@ -26,24 +35,102 @@ async function renderFromConfig(): Promise<void> {
   }
 
   renderDomains(config.lastBlockList ?? []);
+  updateBlockedSitesStatus(config.lastBlockList ?? []);
   await renderSuggestions(config.lastBlockList ?? []);
 }
 
 async function init(): Promise<void> {
   // Render from cache immediately
   await renderFromConfig();
+  if (!hasTrackedOptionsOpened) {
+    hasTrackedOptionsOpened = true;
+    void trackEvent('extension_options_opened', { surface: 'options' });
+  }
 
-  // Listen for pairing/auth events from the service worker
-  chrome.runtime.onMessage.addListener((msg: SWMessageResult) => {
-    if (msg.type === 'PAIRING_COMPLETE') onPairingComplete();
-    if (msg.type === 'PAIRING_EXPIRED')  onPairingExpired();
-    if (msg.type === 'UNLINKED')         renderUnlinked();
-  });
+  if (!listenersRegistered) {
+    listenersRegistered = true;
 
-  // Background poll — re-render after it completes so 401 auto-unpair is reflected
-  chrome.runtime.sendMessage({ type: 'POLL_NOW' })
-    .then(() => renderFromConfig())
-    .catch(() => {});
+    // Listen for pairing/auth events from the service worker
+    chrome.runtime.onMessage.addListener((msg: SWMessageResult) => {
+      if (msg.type === 'PAIRING_COMPLETE') onPairingComplete();
+      if (msg.type === 'PAIRING_EXPIRED')  onPairingExpired();
+      if (msg.type === 'UNLINKED')         renderUnlinked();
+    });
+
+    // Re-render whenever the service worker updates the stored config.
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes.config) {
+        void renderFromConfig();
+      }
+    });
+  }
+
+  // Settings is an explicit sync surface, so bypass popup rate limiting here.
+  await refreshDomains();
+}
+
+async function refreshDomains(): Promise<void> {
+  if (refreshDomainsInFlight) return;
+  refreshDomainsInFlight = true;
+
+  const btn = $('btn-refresh-domains') as HTMLButtonElement;
+  const originalLabel = btn.textContent ?? 'Refresh';
+  btn.disabled = true;
+  btn.textContent = 'Refreshing…';
+  setBlockedSitesStatus('Refreshing your browser block list…', 'subtle');
+  void trackEvent('extension_blocklist_refresh_started', { surface: 'options' });
+
+  try {
+    await chrome.runtime.sendMessage({ type: 'POLL_NOW', force: true });
+  } catch {
+    // Keep current cached state visible if the worker is temporarily unavailable.
+  } finally {
+    await renderFromConfig();
+    btn.textContent = originalLabel;
+    btn.disabled = false;
+    refreshDomainsInFlight = false;
+  }
+}
+
+function setBlockedSitesStatus(message: string, tone: 'subtle' | 'success'): void {
+  const el = $('blocked-sites-status');
+  el.textContent = message;
+  el.className = `status-hint ${tone}`;
+}
+
+function updateBlockedSitesStatus(domains: string[]): void {
+  const count = domains.length;
+  if (refreshDomainsInFlight) return;
+  if (count > 0) {
+    setBlockedSitesStatus(
+      `${count} site${count === 1 ? '' : 's'} synced. Browser list updated just now.`,
+      'success',
+    );
+    if (!hasTrackedBlockListVisible) {
+      hasTrackedBlockListVisible = true;
+      void trackEvent('extension_blocklist_visible', { domain_count: count, surface: 'options' });
+    }
+    return;
+  }
+  setBlockedSitesStatus('No blocked sites synced yet. Add them in the zeyt app or refresh again.', 'subtle');
+}
+
+function getPairingBrowserLabel(): string {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platformRaw = (
+    nav.userAgentData?.platform
+    || navigator.platform
+    || navigator.userAgent
+  ).toLowerCase();
+
+  if (platformRaw.includes('mac')) return 'Chrome on Mac';
+  if (platformRaw.includes('win')) return 'Chrome on Windows';
+  if (platformRaw.includes('linux')) return 'Chrome on Linux';
+  if (platformRaw.includes('android')) return 'Chrome on Android';
+  if (platformRaw.includes('iphone') || platformRaw.includes('ipad') || platformRaw.includes('ios')) {
+    return 'Chrome on iPhone';
+  }
+  return 'Chrome';
 }
 
 function renderLinked(groupId: string): void {
@@ -113,12 +200,22 @@ async function startQRFlow(): Promise<void> {
   if (domains.length > 0) {
     try {
       const payload = JSON.parse(qrString) as Record<string, unknown>;
-      qrString = JSON.stringify({ ...payload, d: domains });
+      qrString = JSON.stringify({ ...payload, d: domains, n: getPairingBrowserLabel() });
+    } catch { /* keep original payload */ }
+  } else {
+    try {
+      const payload = JSON.parse(qrString) as Record<string, unknown>;
+      qrString = JSON.stringify({ ...payload, n: getPairingBrowserLabel() });
     } catch { /* keep original payload */ }
   }
 
   const canvas = $('qr-canvas') as HTMLCanvasElement;
   await QRCode.toCanvas(canvas, qrString, { width: 200, margin: 1 });
+  qrFlowActive = true;
+  void trackEvent('extension_pair_qr_shown', {
+    suggested_domain_count: domains.length,
+    surface: 'options',
+  });
 
   const timerEl = $('qr-timer');
   const expiresAt = result.expiresAt;
@@ -131,15 +228,18 @@ async function startQRFlow(): Promise<void> {
 }
 
 function onPairingComplete(): void {
+  qrFlowActive = false;
   if (qrTimerInterval) { clearInterval(qrTimerInterval); qrTimerInterval = null; }
   $('qr-section').style.display = 'block';
   ($('qr-canvas') as HTMLCanvasElement).style.display = 'none';
   ($('qr-timer') as HTMLElement).style.display = 'none';
   ($('qr-success') as HTMLElement).style.display = '';
+  void trackEvent('extension_pair_completed', { surface: 'options' });
   setTimeout(() => init(), 1500);
 }
 
 function onPairingExpired(): void {
+  qrFlowActive = false;
   if (qrTimerInterval) { clearInterval(qrTimerInterval); qrTimerInterval = null; }
   renderUnlinked();
   const errEl = $('qr-error') as HTMLElement;
@@ -241,6 +341,9 @@ async function renderSuggestions(blockList: string[]): Promise<void> {
 }
 
 $('btn-pair').addEventListener('click', () => startQRFlow());
+$('btn-refresh-domains').addEventListener('click', () => {
+  void refreshDomains();
+});
 
 $('btn-unpair').addEventListener('click', async () => {
   const confirmed = confirm(
