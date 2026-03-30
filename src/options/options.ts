@@ -7,6 +7,7 @@ const $ = (id: string) => document.getElementById(id)!;
 
 let qrTimerInterval: ReturnType<typeof setInterval> | null = null;
 let qrFlowActive = false;          // true while QR code is displayed — prevents re-render loops
+let pairingStartInFlight = false;  // true while requesting a new pairing session
 let refreshDomainsInFlight = false;
 let listenersRegistered = false;
 let hasTrackedBlockListVisible = false;
@@ -20,8 +21,8 @@ async function renderFromConfig(): Promise<void> {
   if (config.groupId) {
     qrFlowActive = false;
     renderLinked(config.groupId);
-  } else if (qrFlowActive) {
-    // QR code is already visible — don't restart the flow (avoids API spam)
+  } else if (qrFlowActive || pairingStartInFlight) {
+    // QR code is already visible or being requested — don't restart the flow.
   } else if (config.pairing?.status === 'pending') {
     const stored = await chrome.storage.local.get('config');
     const pairing = stored.config?.pairing;
@@ -154,6 +155,9 @@ function renderUnlinked(): void {
 }
 
 async function startQRFlow(): Promise<void> {
+  if (qrFlowActive || pairingStartInFlight) return;
+
+  pairingStartInFlight = true;
   ($('btn-pair') as HTMLButtonElement).disabled = true;
   ($('qr-error') as HTMLElement).style.display = 'none';
 
@@ -161,6 +165,7 @@ async function startQRFlow(): Promise<void> {
   try {
     result = await chrome.runtime.sendMessage({ type: 'START_PAIRING' });
   } catch {
+    pairingStartInFlight = false;
     ($('btn-pair') as HTMLButtonElement).disabled = false;
     const errEl = $('qr-error') as HTMLElement;
     errEl.textContent = 'Could not reach the extension background. Please try again.';
@@ -169,6 +174,7 @@ async function startQRFlow(): Promise<void> {
   }
 
   if (!result || result.type !== 'PAIRING_STARTED') {
+    pairingStartInFlight = false;
     ($('btn-pair') as HTMLButtonElement).disabled = false;
     const errEl = $('qr-error') as HTMLElement;
     errEl.textContent = result?.type === 'ERROR' ? (result as any).message : 'Failed to start pairing.';
@@ -212,6 +218,7 @@ async function startQRFlow(): Promise<void> {
   const canvas = $('qr-canvas') as HTMLCanvasElement;
   await QRCode.toCanvas(canvas, qrString, { width: 200, margin: 1 });
   qrFlowActive = true;
+  pairingStartInFlight = false;
   void trackEvent('extension_pair_qr_shown', {
     suggested_domain_count: domains.length,
     surface: 'options',
@@ -229,6 +236,7 @@ async function startQRFlow(): Promise<void> {
 
 function onPairingComplete(): void {
   qrFlowActive = false;
+  pairingStartInFlight = false;
   if (qrTimerInterval) { clearInterval(qrTimerInterval); qrTimerInterval = null; }
   $('qr-section').style.display = 'block';
   ($('qr-canvas') as HTMLCanvasElement).style.display = 'none';
@@ -240,6 +248,7 @@ function onPairingComplete(): void {
 
 function onPairingExpired(): void {
   qrFlowActive = false;
+  pairingStartInFlight = false;
   if (qrTimerInterval) { clearInterval(qrTimerInterval); qrTimerInterval = null; }
   renderUnlinked();
   const errEl = $('qr-error') as HTMLElement;

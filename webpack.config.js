@@ -1,6 +1,43 @@
 const path = require('path');
+const fs = require('fs');
 const webpack = require('webpack');
 const CopyPlugin = require('copy-webpack-plugin');
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return {};
+
+  const file = fs.readFileSync(filePath, 'utf8');
+  const entries = {};
+
+  for (const rawLine of file.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex === -1) continue;
+
+    const key = line.slice(0, separatorIndex).trim();
+    let value = line.slice(separatorIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith('\'') && value.endsWith('\''))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (!(key in process.env)) {
+      entries[key] = value;
+    }
+  }
+
+  return entries;
+}
+
+const envDefaults = {
+  ...loadEnvFile(path.resolve(__dirname, '.env')),
+  ...loadEnvFile(path.resolve(__dirname, '.env.local')),
+};
 
 module.exports = (env, argv) => ({
   // 'eval' (webpack's default for dev) is blocked by Chrome extension CSP.
@@ -32,6 +69,7 @@ module.exports = (env, argv) => ({
     new webpack.EnvironmentPlugin({
       POSTHOG_KEY: '',
       POSTHOG_HOST: 'https://eu.i.posthog.com',
+      ...envDefaults,
     }),
     new CopyPlugin({
       patterns: [

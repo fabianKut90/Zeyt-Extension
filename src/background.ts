@@ -47,7 +47,7 @@ const STATE_POLL_ALARM  = 'zeyt_state_poll'; // periodic poll while in open mode
 const PAIR_POLL_INTERVAL_S    = 10;
 const BLOCKLIST_REFRESH_MS    = 24 * 60 * 60_000; // 24 hours
 const STALE_THRESHOLD_MS      = 4  * 60 * 60_000; // 4 hours (fail-closed guard)
-const STATE_POLL_INTERVAL_MIN = 2;               // check for blocking every 2 min
+const STATE_POLL_INTERVAL_MIN = 15;              // safety poll for indefinite open mode only
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -90,6 +90,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     const config = await getConfig();
     if (!config.groupId || !config.extensionDeviceToken) return;
     if (!config.lastFocusState?.isBlocking) {
+      // Timed open sessions already have an exact transition alarm.
+      if (config.lastFocusState?.endsAt != null) return;
       await pollFocusState();
     }
   }

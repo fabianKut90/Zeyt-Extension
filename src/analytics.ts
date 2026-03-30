@@ -4,9 +4,16 @@ const POSTHOG_KEY = process.env.POSTHOG_KEY || '';
 const POSTHOG_HOST = process.env.POSTHOG_HOST || 'https://eu.i.posthog.com';
 
 let initialized = false;
+let warnedMissingKey = false;
 
 function initAnalytics(): boolean {
-  if (!POSTHOG_KEY) return false;
+  if (!POSTHOG_KEY) {
+    if (!warnedMissingKey) {
+      warnedMissingKey = true;
+      console.warn('[analytics] PostHog disabled: missing POSTHOG_KEY at build time.');
+    }
+    return false;
+  }
   if (initialized) return true;
 
   posthog.init(POSTHOG_KEY, {
