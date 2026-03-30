@@ -451,12 +451,6 @@ chrome.runtime.onMessage.addListener(
           sendResponse(await handleGetStatus());
           break;
         }
-        case 'RESUME_LIVE_SYNC': {
-          await setConfig({ focuslinkLiveSyncEnabled: true });
-          await syncRuntimeState({ refreshOnResume: true });
-          sendResponse(await handleGetStatus());
-          break;
-        }
         case 'UNPAIR': {
           await chrome.alarms.clear(TRANSITION_ALARM);
           await chrome.alarms.clear(WARN_ALARM);
@@ -475,7 +469,7 @@ chrome.runtime.onMessage.addListener(
 async function handleStartPairing(): Promise<SWMessageResult> {
   const config = await getConfig();
   if (!config.focuslinkLiveSyncEnabled) {
-    return { type: 'ERROR', message: 'Live sync is paused in this dev build. Resume live sync to pair against production.' };
+    return { type: 'ERROR', message: 'Live sync is disabled in this dev build. Run ./scripts/set_focuslink_sync_mode.sh on and rebuild before pairing against production.' };
   }
   try {
     const result = await startPairing(WORKER_URL, config.extensionDeviceId);

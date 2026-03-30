@@ -20,11 +20,10 @@ function applyDevSyncGuard(): void {
   if (!paused) return;
 
   $('dev-sync-copy').textContent = latestStatus?.syncMode === 'off'
-    ? 'Live sync is disabled by your local terminal setting. Run the enable command, then rebuild and reload the extension before testing against production.'
+    ? 'Live sync is disabled by your local terminal setting. Run ./scripts/set_focuslink_sync_mode.sh on, then rebuild and reload the extension before testing against production.'
     : latestStatus?.isPaired
-    ? 'This development build is paired, but live sync is paused until you explicitly resume it.'
-    : 'This development build is paused by default. Resume live sync before pairing this browser against production.';
-  $('btn-resume-live-sync').style.display = latestStatus?.syncMode === 'manual' ? 'block' : 'none';
+    ? 'This development build is paired, but live sync is disabled until you run ./scripts/set_focuslink_sync_mode.sh on and rebuild.'
+    : 'This development build is disabled for live sync until you run ./scripts/set_focuslink_sync_mode.sh on and rebuild.';
 }
 
 async function refreshStatusFromSW(): Promise<void> {
@@ -271,21 +270,6 @@ async function startQRFlow(): Promise<void> {
   qrTimerInterval = setInterval(tick, 1000);
 }
 
-async function resumeLiveSync(): Promise<void> {
-  const btn = $('btn-resume-live-sync') as HTMLButtonElement;
-  const originalLabel = btn.textContent ?? 'Resume live sync';
-  btn.disabled = true;
-  btn.textContent = 'Resuming…';
-  try {
-    await chrome.runtime.sendMessage({ type: 'RESUME_LIVE_SYNC' });
-    await renderFromConfig();
-    await refreshStatusFromSW();
-  } finally {
-    btn.textContent = originalLabel;
-    btn.disabled = false;
-  }
-}
-
 function onPairingComplete(): void {
   qrFlowActive = false;
   pairingStartInFlight = false;
@@ -402,9 +386,6 @@ async function renderSuggestions(blockList: string[]): Promise<void> {
 }
 
 $('btn-pair').addEventListener('click', () => startQRFlow());
-$('btn-resume-live-sync').addEventListener('click', () => {
-  void resumeLiveSync();
-});
 $('btn-refresh-domains').addEventListener('click', () => {
   void refreshDomains();
 });

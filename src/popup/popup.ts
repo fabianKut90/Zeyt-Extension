@@ -20,12 +20,7 @@ function renderDevGuard(status: Extract<SWMessageResult, { type: 'STATUS' }>): v
   }
 
   banner.style.display = 'block';
-  $('dev-sync-text').textContent = status.syncMode === 'off'
-    ? 'Live sync is disabled by local dev command. Run the terminal enable command, then rebuild/reload before testing production sync.'
-    : status.isPaired
-    ? 'Live sync is paused in this dev build. Resume it before testing browser sync against production.'
-    : 'Live sync is paused in this dev build. Resume it before pairing this browser against production.';
-  $('btn-resume-live-sync').style.display = status.syncMode === 'manual' ? 'block' : 'none';
+  $('dev-sync-text').textContent = 'Live sync is disabled in this dev build. Run ./scripts/set_focuslink_sync_mode.sh on, then rebuild/reload before testing production sync.';
 }
 
 function formatTime(ts: number): string {
@@ -78,9 +73,5 @@ function renderPaired(status: Extract<SWMessageResult, { type: 'STATUS' }>): voi
 
 $('btn-settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
 $('btn-open-settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
-$('btn-resume-live-sync').addEventListener('click', async () => {
-  await sendToSW({ type: 'RESUME_LIVE_SYNC' });
-  await init();
-});
 
 init();

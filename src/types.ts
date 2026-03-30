@@ -62,7 +62,6 @@ export type SWMessage =
   | { type: 'START_PAIRING' }
   | { type: 'GET_STATUS' }
   | { type: 'POLL_NOW'; force?: boolean }  // popup/options open — rate-limited; force=true bypasses
-  | { type: 'RESUME_LIVE_SYNC' }
   | { type: 'UNPAIR' };
 
 export type SWMessageResult =
