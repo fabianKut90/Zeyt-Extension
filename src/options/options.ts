@@ -12,9 +12,37 @@ let refreshDomainsInFlight = false;
 let listenersRegistered = false;
 let hasTrackedBlockListVisible = false;
 let hasTrackedOptionsOpened = false;
+let latestStatus: Extract<SWMessageResult, { type: 'STATUS' }> | null = null;
+
+function applyDevSyncGuard(): void {
+  const paused = !!(latestStatus?.isDevBuild && !latestStatus.liveSyncEnabled);
+  $('dev-sync-card').style.display = paused ? 'block' : 'none';
+  if (!paused) return;
+
+  $('dev-sync-copy').textContent = latestStatus?.syncMode === 'off'
+    ? 'Live sync is disabled by your local terminal setting. Run the enable command, then rebuild and reload the extension before testing against production.'
+    : latestStatus?.isPaired
+    ? 'This development build is paired, but live sync is paused until you explicitly resume it.'
+    : 'This development build is paused by default. Resume live sync before pairing this browser against production.';
+  $('btn-resume-live-sync').style.display = latestStatus?.syncMode === 'manual' ? 'block' : 'none';
+}
+
+async function refreshStatusFromSW(): Promise<void> {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'GET_STATUS' });
+    if (result.type === 'STATUS') {
+      latestStatus = result;
+      applyDevSyncGuard();
+    }
+  } catch {
+    latestStatus = null;
+    $('dev-sync-card').style.display = 'none';
+  }
+}
 
 async function renderFromConfig(): Promise<void> {
   const config = await getConfig();
+  const liveSyncPaused = latestStatus?.liveSyncEnabled === false;
 
   $('device-id').textContent = config.extensionDeviceId;
 
@@ -26,7 +54,7 @@ async function renderFromConfig(): Promise<void> {
   } else if (config.pairing?.status === 'pending') {
     const stored = await chrome.storage.local.get('config');
     const pairing = stored.config?.pairing;
-    if (pairing?.pairingToken) {
+    if (pairing?.pairingToken && !liveSyncPaused) {
       await startQRFlow();
     } else {
       renderUnlinked();
@@ -41,6 +69,7 @@ async function renderFromConfig(): Promise<void> {
 }
 
 async function init(): Promise<void> {
+  await refreshStatusFromSW();
   // Render from cache immediately
   await renderFromConfig();
   if (!hasTrackedOptionsOpened) {
@@ -67,10 +96,18 @@ async function init(): Promise<void> {
   }
 
   // Settings is an explicit sync surface, so bypass popup rate limiting here.
-  await refreshDomains();
+  if (latestStatus?.liveSyncEnabled !== false) {
+    await refreshDomains();
+  }
 }
 
 async function refreshDomains(): Promise<void> {
+  if (latestStatus?.liveSyncEnabled === false) {
+    await renderFromConfig();
+    await refreshStatusFromSW();
+    return;
+  }
+
   if (refreshDomainsInFlight) return;
   refreshDomainsInFlight = true;
 
@@ -234,6 +271,21 @@ async function startQRFlow(): Promise<void> {
   qrTimerInterval = setInterval(tick, 1000);
 }
 
+async function resumeLiveSync(): Promise<void> {
+  const btn = $('btn-resume-live-sync') as HTMLButtonElement;
+  const originalLabel = btn.textContent ?? 'Resume live sync';
+  btn.disabled = true;
+  btn.textContent = 'Resuming…';
+  try {
+    await chrome.runtime.sendMessage({ type: 'RESUME_LIVE_SYNC' });
+    await renderFromConfig();
+    await refreshStatusFromSW();
+  } finally {
+    btn.textContent = originalLabel;
+    btn.disabled = false;
+  }
+}
+
 function onPairingComplete(): void {
   qrFlowActive = false;
   pairingStartInFlight = false;
@@ -350,6 +402,9 @@ async function renderSuggestions(blockList: string[]): Promise<void> {
 }
 
 $('btn-pair').addEventListener('click', () => startQRFlow());
+$('btn-resume-live-sync').addEventListener('click', () => {
+  void resumeLiveSync();
+});
 $('btn-refresh-domains').addEventListener('click', () => {
   void refreshDomains();
 });

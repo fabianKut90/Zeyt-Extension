@@ -37,6 +37,8 @@ export interface StoredConfig {
   extensionDeviceId: string;          // stable, generated once, never changes
   groupId: string | null;
   extensionDeviceToken: string | null;
+  focuslinkLiveSyncEnabled: boolean;
+  lastBuildId: string | null;
   lastFocusState: FocusStateSnapshot | null;
   lastBlockList: string[];
   lastBlockListVersion: number;
@@ -60,11 +62,12 @@ export type SWMessage =
   | { type: 'START_PAIRING' }
   | { type: 'GET_STATUS' }
   | { type: 'POLL_NOW'; force?: boolean }  // popup/options open — rate-limited; force=true bypasses
+  | { type: 'RESUME_LIVE_SYNC' }
   | { type: 'UNPAIR' };
 
 export type SWMessageResult =
   | { type: 'PAIRING_STARTED'; qrPayload: string; expiresAt: number }
-  | { type: 'STATUS'; isPaired: boolean; isBlocking: boolean; pairingStatus: string | null; startedAt: number | null; endsAt: number | null; fetchedAt: number | null; syncIssue: boolean }
+  | { type: 'STATUS'; isPaired: boolean; isBlocking: boolean; pairingStatus: string | null; startedAt: number | null; endsAt: number | null; fetchedAt: number | null; syncIssue: boolean; liveSyncEnabled: boolean; isDevBuild: boolean; syncMode: 'on' | 'manual' | 'off' }
   | { type: 'PAIRING_COMPLETE' }
   | { type: 'PAIRING_EXPIRED' }
   | { type: 'UNLINKED' }

@@ -14,6 +14,8 @@ const DEFAULTS: StoredConfig = {
   extensionDeviceId: generateDeviceId(),
   groupId: null,
   extensionDeviceToken: null,
+  focuslinkLiveSyncEnabled: true,
+  lastBuildId: null,
   lastFocusState: null,
   lastBlockList: [],
   lastBlockListVersion: 0,

@@ -72,10 +72,30 @@
       .qr-timer { font-size: 12px; color: #9ca3af; }
       .qr-success { font-size: 13px; font-weight: 600; color: #065f46; margin-top: 8px; }
       .qr-error   { font-size: 12px; color: #b91c1c; margin-top: 8px; }
+      .dev-sync-card {
+        display: none;
+        background: #FEF3C7;
+        border: 1px solid #FCD34D;
+      }
+      .dev-sync-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #92400E;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .dev-sync-copy { font-size: 13px; color: #78350F; line-height: 1.5; margin-bottom: 12px; }
     </style>
   </head>
   <body>
     <h1>zeyt</h1>
+
+    <div class="card dev-sync-card" id="dev-sync-card">
+      <div class="dev-sync-title">Dev Build</div>
+      <div class="dev-sync-copy" id="dev-sync-copy"></div>
+      <button class="btn-primary" id="btn-resume-live-sync">Resume live sync</button>
+    </div>
 
     <!-- ── Link card ── -->
     <div class="card">

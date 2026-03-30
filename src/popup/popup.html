@@ -145,9 +145,44 @@
 
       /* ── Loading ─────────────────────────────────────────────────────────── */
       .loading-wrap { padding: 36px 16px; text-align: center; color: #D1D5DB; font-size: 13px; }
+
+      .dev-sync-banner {
+        display: none;
+        margin: 12px 16px 0;
+        padding: 12px;
+        border-radius: 12px;
+        background: #FEF3C7;
+        border: 1px solid #FCD34D;
+        color: #78350F;
+      }
+      .dev-sync-title {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      .dev-sync-text { font-size: 12px; line-height: 1.45; margin-bottom: 10px; }
+      .dev-sync-btn {
+        width: 100%;
+        padding: 9px;
+        border: none;
+        border-radius: 8px;
+        background: #3A4F3F;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        font-family: inherit;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body class="open-mode">
+    <div id="dev-sync-banner" class="dev-sync-banner">
+      <div class="dev-sync-title">Dev Build</div>
+      <div id="dev-sync-text" class="dev-sync-text"></div>
+      <button id="btn-resume-live-sync" class="dev-sync-btn">Resume live sync</button>
+    </div>
 
     <!-- ── Paired ── -->
     <div id="view-paired" style="display:none">

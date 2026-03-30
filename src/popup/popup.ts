@@ -12,6 +12,22 @@ function show(viewId: string): void {
   }
 }
 
+function renderDevGuard(status: Extract<SWMessageResult, { type: 'STATUS' }>): void {
+  const banner = $('dev-sync-banner');
+  if (!status.isDevBuild || status.liveSyncEnabled) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  banner.style.display = 'block';
+  $('dev-sync-text').textContent = status.syncMode === 'off'
+    ? 'Live sync is disabled by local dev command. Run the terminal enable command, then rebuild/reload before testing production sync.'
+    : status.isPaired
+    ? 'Live sync is paused in this dev build. Resume it before testing browser sync against production.'
+    : 'Live sync is paused in this dev build. Resume it before pairing this browser against production.';
+  $('btn-resume-live-sync').style.display = status.syncMode === 'manual' ? 'block' : 'none';
+}
+
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -25,10 +41,13 @@ async function init(): Promise<void> {
   const cached = await sendToSW({ type: 'GET_STATUS' });
   if (cached.type === 'STATUS') {
     cached.isPaired ? renderPaired(cached) : show('view-unlinked');
+    renderDevGuard(cached);
   }
 
   // Background poll — silently refreshes state + block list
-  sendToSW({ type: 'POLL_NOW' }).catch(() => {});
+  if (cached.type === 'STATUS' && cached.liveSyncEnabled) {
+    sendToSW({ type: 'POLL_NOW' }).catch(() => {});
+  }
 }
 
 function renderPaired(status: Extract<SWMessageResult, { type: 'STATUS' }>): void {
@@ -59,5 +78,9 @@ function renderPaired(status: Extract<SWMessageResult, { type: 'STATUS' }>): voi
 
 $('btn-settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
 $('btn-open-settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
+$('btn-resume-live-sync').addEventListener('click', async () => {
+  await sendToSW({ type: 'RESUME_LIVE_SYNC' });
+  await init();
+});
 
 init();

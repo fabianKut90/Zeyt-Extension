@@ -69,7 +69,15 @@ module.exports = (env, argv) => ({
     new webpack.EnvironmentPlugin({
       POSTHOG_KEY: '',
       POSTHOG_HOST: 'https://eu.i.posthog.com',
+      FOCUSLINK_DEV_BUILD: argv.mode === 'production' ? 'false' : 'true',
+      FOCUSLINK_SYNC_MODE: argv.mode === 'production' ? 'on' : 'manual',
       ...envDefaults,
+    }),
+    new webpack.DefinePlugin({
+      'process.env.FOCUSLINK_BUILD_ID': webpack.DefinePlugin.runtimeValue(
+        () => JSON.stringify(String(Date.now())),
+        true,
+      ),
     }),
     new CopyPlugin({
       patterns: [

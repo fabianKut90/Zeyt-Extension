@@ -22,10 +22,18 @@
 import { getConfig, setConfig, clearPairing, shouldFailClosed } from './storage';
 import { FocusLinkAPI, startPairing, checkPairingStatus, APIError } from './api';
 import { updateBlockRules, clearBlockRules } from './rules';
-import type { FocusStateSnapshot, SWMessage, SWMessageResult } from './types';
+import type { FocusStateSnapshot, StoredConfig, SWMessage, SWMessageResult } from './types';
 
 // Worker URL is fixed per deployment — users never configure this
 export const WORKER_URL = 'https://focus.zeyt.io';
+const FOCUSLINK_DEV_BUILD = process.env.FOCUSLINK_DEV_BUILD === 'true';
+const FOCUSLINK_BUILD_ID = process.env.FOCUSLINK_BUILD_ID || 'prod';
+const FOCUSLINK_SYNC_MODE = (
+  process.env.FOCUSLINK_SYNC_MODE === 'off'
+  || process.env.FOCUSLINK_SYNC_MODE === 'on'
+)
+  ? process.env.FOCUSLINK_SYNC_MODE
+  : 'manual';
 
 // In-memory: track previous blocking state to detect transitions
 let _wasBlocking = false;
@@ -52,25 +60,22 @@ const STATE_POLL_INTERVAL_MIN = 15;              // safety poll for indefinite o
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(async (details) => {
-  chrome.alarms.create(BLOCKLIST_ALARM, { periodInMinutes: 24 * 60 });
-  chrome.alarms.create(STATE_POLL_ALARM, { periodInMinutes: STATE_POLL_INTERVAL_MIN });
-  await initIcon();
-  await maybeRefreshBlockList();
+  await syncRuntimeState({ refreshOnResume: true });
   if (details.reason === 'install') {
     chrome.runtime.openOptionsPage();
   }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  chrome.alarms.create(BLOCKLIST_ALARM, { periodInMinutes: 24 * 60 });
-  chrome.alarms.create(STATE_POLL_ALARM, { periodInMinutes: STATE_POLL_INTERVAL_MIN });
-  await initIcon();
-  await maybeRefreshBlockList();
+  await syncRuntimeState({ refreshOnResume: true });
 });
 
 // ─── Alarms ───────────────────────────────────────────────────────────────────
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  const config = await getConfig();
+  if (!config.focuslinkLiveSyncEnabled) return;
+
   if (alarm.name === BLOCKLIST_ALARM)  await refreshBlockList();
   if (alarm.name === PAIRING_ALARM)    await pollPairingStatus();
   if (alarm.name === TRANSITION_ALARM) {
@@ -87,7 +92,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     // blocked site open when the phone locks).
     // Only fires when we think we're NOT blocking; declarativeNetRequest + TRANSITION_ALARM
     // handle the blocking→open direction.
-    const config = await getConfig();
     if (!config.groupId || !config.extensionDeviceToken) return;
     if (!config.lastFocusState?.isBlocking) {
       // Timed open sessions already have an exact transition alarm.
@@ -106,6 +110,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 chrome.tabs.onUpdated.addListener(async (_tabId, info, tab) => {
   if (info.status !== 'complete' || !tab.url) return;
   const config = await getConfig();
+  if (!config.focuslinkLiveSyncEnabled) return;
   const blockList = config.lastBlockList ?? [];
   if (blockList.length === 0) return;
   try {
@@ -131,6 +136,7 @@ async function rateLimitedPoll(): Promise<void> {
   const now = Date.now();
   if (now - _lastPollAt < POLL_RATE_LIMIT_MS) return;
   const config = await getConfig();
+  if (!config.focuslinkLiveSyncEnabled) return;
   if (!config.groupId || !config.extensionDeviceToken) return;
   // Skip if already blocking — onUpdated + blocked.html covers that direction
   if (config.lastFocusState?.isBlocking) return;
@@ -148,6 +154,7 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 
 async function maybeRefreshBlockList(): Promise<void> {
   const config = await getConfig();
+  if (!config.focuslinkLiveSyncEnabled) return;
   if (!config.groupId || !config.extensionDeviceToken) return;
   const age = Date.now() - (config.blockListFetchedAt ?? 0);
   if (age > BLOCKLIST_REFRESH_MS) await refreshBlockList();
@@ -155,6 +162,7 @@ async function maybeRefreshBlockList(): Promise<void> {
 
 async function refreshBlockList(): Promise<void> {
   const config = await getConfig();
+  if (!config.focuslinkLiveSyncEnabled) return;
   if (!config.groupId || !config.extensionDeviceToken) return;
   const api = new FocusLinkAPI(WORKER_URL, config.groupId, config.extensionDeviceToken);
   try {
@@ -267,6 +275,7 @@ async function injectWarningToast(): Promise<void> {
 
 async function pollFocusState(): Promise<void> {
   const config = await getConfig();
+  if (!config.focuslinkLiveSyncEnabled) return;
   if (!config.groupId || !config.extensionDeviceToken) return;
 
   const api = new FocusLinkAPI(WORKER_URL, config.groupId, config.extensionDeviceToken);
@@ -362,6 +371,10 @@ async function applyFailClosed(): Promise<void> {
 
 async function pollPairingStatus(): Promise<void> {
   const config = await getConfig();
+  if (!config.focuslinkLiveSyncEnabled) {
+    await chrome.alarms.clear(PAIRING_ALARM);
+    return;
+  }
 
   if (!config.pairing || config.pairing.status !== 'pending') {
     await chrome.alarms.clear(PAIRING_ALARM);
@@ -425,16 +438,22 @@ chrome.runtime.onMessage.addListener(
           // Popup opened or blocked.html "Check now" — fetch state (and block list if stale)
           // Rate-limited: blocked.html "Check now" bypasses the limit via force flag
           const now = Date.now();
-          if (message.force || now - _lastPollNowAt > POLL_NOW_RATE_LIMIT_MS) {
+          const cfg = await getConfig();
+          if (cfg.focuslinkLiveSyncEnabled && (message.force || now - _lastPollNowAt > POLL_NOW_RATE_LIMIT_MS)) {
             _lastPollNowAt = now;
             // Only refresh block list if it's more than 1 hour old — the 24h alarm handles
             // scheduled refreshes; refreshing on every poll wastes DO requests.
-            const cfg = await getConfig();
             if (now - (cfg.blockListFetchedAt ?? 0) > 60 * 60_000) {
               await refreshBlockList();
             }
             await pollFocusState();
           }
+          sendResponse(await handleGetStatus());
+          break;
+        }
+        case 'RESUME_LIVE_SYNC': {
+          await setConfig({ focuslinkLiveSyncEnabled: true });
+          await syncRuntimeState({ refreshOnResume: true });
           sendResponse(await handleGetStatus());
           break;
         }
@@ -455,6 +474,9 @@ chrome.runtime.onMessage.addListener(
 
 async function handleStartPairing(): Promise<SWMessageResult> {
   const config = await getConfig();
+  if (!config.focuslinkLiveSyncEnabled) {
+    return { type: 'ERROR', message: 'Live sync is paused in this dev build. Resume live sync to pair against production.' };
+  }
   try {
     const result = await startPairing(WORKER_URL, config.extensionDeviceId);
     await setConfig({
@@ -492,7 +514,79 @@ async function handleGetStatus(): Promise<SWMessageResult> {
     endsAt: snapshot?.endsAt ?? null,
     fetchedAt: snapshot?.fetchedAt ?? null,
     syncIssue: stale,
+    liveSyncEnabled: config.focuslinkLiveSyncEnabled,
+    isDevBuild: FOCUSLINK_DEV_BUILD,
+    syncMode: FOCUSLINK_DEV_BUILD ? FOCUSLINK_SYNC_MODE : 'on',
   };
+}
+
+async function syncRuntimeState(
+  { refreshOnResume = false }: { refreshOnResume?: boolean } = {},
+): Promise<StoredConfig> {
+  let config = await getConfig();
+  const next: Partial<StoredConfig> = {};
+
+  if (config.lastBuildId !== FOCUSLINK_BUILD_ID) {
+    next.lastBuildId = FOCUSLINK_BUILD_ID;
+  }
+
+  if (FOCUSLINK_DEV_BUILD) {
+    if (FOCUSLINK_SYNC_MODE === 'off') {
+      if (config.focuslinkLiveSyncEnabled !== false) {
+        next.focuslinkLiveSyncEnabled = false;
+      }
+    } else if (FOCUSLINK_SYNC_MODE === 'on') {
+      if (config.focuslinkLiveSyncEnabled !== true) {
+        next.focuslinkLiveSyncEnabled = true;
+      }
+    } else if (
+      config.lastBuildId !== FOCUSLINK_BUILD_ID
+      || typeof config.focuslinkLiveSyncEnabled !== 'boolean'
+    ) {
+      next.focuslinkLiveSyncEnabled = false;
+    }
+  } else if (config.focuslinkLiveSyncEnabled !== true) {
+    next.focuslinkLiveSyncEnabled = true;
+  }
+
+  if (Object.keys(next).length > 0) {
+    await setConfig(next);
+    config = { ...config, ...next };
+  }
+
+  if (!config.focuslinkLiveSyncEnabled) {
+    await chrome.alarms.clear(BLOCKLIST_ALARM);
+    await chrome.alarms.clear(STATE_POLL_ALARM);
+    await chrome.alarms.clear(PAIRING_ALARM);
+    await chrome.alarms.clear(TRANSITION_ALARM);
+    await chrome.alarms.clear(WARN_ALARM);
+    await clearBlockRules();
+    await setStateIcon(config.groupId && config.extensionDeviceToken ? 'open' : 'uncoupled');
+    return config;
+  }
+
+  if (config.groupId && config.extensionDeviceToken) {
+    chrome.alarms.create(BLOCKLIST_ALARM, { periodInMinutes: 24 * 60 });
+    chrome.alarms.create(STATE_POLL_ALARM, { periodInMinutes: STATE_POLL_INTERVAL_MIN });
+  } else {
+    await chrome.alarms.clear(BLOCKLIST_ALARM);
+    await chrome.alarms.clear(STATE_POLL_ALARM);
+  }
+
+  if (config.pairing?.status === 'pending') {
+    chrome.alarms.create(PAIRING_ALARM, { periodInMinutes: PAIR_POLL_INTERVAL_S / 60 });
+  } else {
+    await chrome.alarms.clear(PAIRING_ALARM);
+  }
+
+  await initIcon();
+
+  if (refreshOnResume && config.groupId && config.extensionDeviceToken) {
+    await maybeRefreshBlockList();
+    await pollFocusState();
+  }
+
+  return config;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
