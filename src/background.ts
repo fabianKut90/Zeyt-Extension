@@ -33,7 +33,7 @@ const FOCUSLINK_SYNC_MODE = (
   || process.env.FOCUSLINK_SYNC_MODE === 'on'
 )
   ? process.env.FOCUSLINK_SYNC_MODE
-  : 'manual';
+  : 'off';
 
 // In-memory: track previous blocking state to detect transitions
 let _wasBlocking = false;
@@ -213,6 +213,12 @@ async function scheduleTransitionAlarm(endsAt: number | null): Promise<void> {
 // is about to expire. Self-contained: no content script file needed.
 
 async function injectWarningToast(): Promise<void> {
+  const config = await getConfig();
+  if (!config.oneMinuteWarningEnabled) return;
+
+  const hasScriptingPermission = await chrome.permissions.contains({ permissions: ['scripting'] });
+  if (!hasScriptingPermission) return;
+
   const tabs = await chrome.tabs.query({ active: true, windowType: 'normal' });
   for (const tab of tabs) {
     if (!tab.id || !tab.url) continue;
@@ -305,8 +311,12 @@ async function pollFocusState(): Promise<void> {
     };
 
     await setConfig({ lastFocusState: snapshot });
+    if (state.blockListVersion !== (config.lastBlockListVersion ?? 0)) {
+      await refreshBlockList();
+    }
+    const refreshedConfig = await getConfig();
     await scheduleTransitionAlarm(snapshot.endsAt);
-    await applyFocusState(state.isBlocking, config.lastBlockList ?? []);
+    await applyFocusState(state.isBlocking, refreshedConfig.lastBlockList ?? []);
   } catch (err) {
     if (err instanceof APIError && (err.status === 401 || err.status === 403)) {
       // Credentials rejected — app was uninstalled or device revoked
@@ -469,7 +479,7 @@ chrome.runtime.onMessage.addListener(
 async function handleStartPairing(): Promise<SWMessageResult> {
   const config = await getConfig();
   if (!config.focuslinkLiveSyncEnabled) {
-    return { type: 'ERROR', message: 'Live sync is disabled in this dev build. Run ./scripts/set_focuslink_sync_mode.sh on and rebuild before pairing against production.' };
+    return { type: 'ERROR', message: 'Live sync is disabled by your local terminal setting. Run ./scripts/set_focuslink_sync_mode.sh on and rebuild before pairing against production.' };
   }
   try {
     const result = await startPairing(WORKER_URL, config.extensionDeviceId);
@@ -510,7 +520,7 @@ async function handleGetStatus(): Promise<SWMessageResult> {
     syncIssue: stale,
     liveSyncEnabled: config.focuslinkLiveSyncEnabled,
     isDevBuild: FOCUSLINK_DEV_BUILD,
-    syncMode: FOCUSLINK_DEV_BUILD ? FOCUSLINK_SYNC_MODE : 'on',
+    syncMode: FOCUSLINK_SYNC_MODE,
   };
 }
 
@@ -524,20 +534,13 @@ async function syncRuntimeState(
     next.lastBuildId = FOCUSLINK_BUILD_ID;
   }
 
-  if (FOCUSLINK_DEV_BUILD) {
-    if (FOCUSLINK_SYNC_MODE === 'off') {
-      if (config.focuslinkLiveSyncEnabled !== false) {
-        next.focuslinkLiveSyncEnabled = false;
-      }
-    } else if (FOCUSLINK_SYNC_MODE === 'on') {
-      if (config.focuslinkLiveSyncEnabled !== true) {
-        next.focuslinkLiveSyncEnabled = true;
-      }
-    } else if (
-      config.lastBuildId !== FOCUSLINK_BUILD_ID
-      || typeof config.focuslinkLiveSyncEnabled !== 'boolean'
-    ) {
+  if (FOCUSLINK_SYNC_MODE === 'off') {
+    if (config.focuslinkLiveSyncEnabled !== false) {
       next.focuslinkLiveSyncEnabled = false;
+    }
+  } else if (FOCUSLINK_SYNC_MODE === 'on') {
+    if (config.focuslinkLiveSyncEnabled !== true) {
+      next.focuslinkLiveSyncEnabled = true;
     }
   } else if (config.focuslinkLiveSyncEnabled !== true) {
     next.focuslinkLiveSyncEnabled = true;
