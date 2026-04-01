@@ -42,8 +42,12 @@ async function checkState(auto) {
   btn.disabled = true;
   if (!auto) msg.textContent = 'Checking…';
   try {
-    const result = await sendToSW({ type: 'POLL_NOW' });
-    if (result?.isBlocking === false) {
+    const result = await sendToSW({
+      type: 'POLL_NOW',
+      force: !auto,
+      source: auto ? 'extension:blocked.auto' : 'extension:blocked.manual',
+    });
+    if (result?.type === 'STATUS' && result.isBlocking === false) {
       msg.textContent = 'Unblocked! Redirecting…';
       setTimeout(() => { location.href = originalUrl || 'about:blank'; }, 600);
     } else {

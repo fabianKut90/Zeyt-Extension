@@ -6,6 +6,7 @@ export interface FocusState {
   startedAt: number | null;
   endsAt: number | null;
   unlockedAt: number | null;
+  dockColorKey: string | null;
   blockListVersion: number;
   version: number;
   updatedAt: number;
@@ -38,6 +39,9 @@ export interface StoredConfig {
   groupId: string | null;
   extensionDeviceToken: string | null;
   focuslinkLiveSyncEnabled: boolean;
+  topSitesPromptShown: boolean;
+  warningPromptShown: boolean;
+  oneMinuteWarningEnabled: boolean;
   lastBuildId: string | null;
   lastFocusState: FocusStateSnapshot | null;
   lastBlockList: string[];
@@ -51,6 +55,7 @@ export interface FocusStateSnapshot {
   sessionId: string | null;
   startedAt: number | null;
   endsAt: number | null;
+  dockColorKey: string | null;
   blockListVersion: number;
   version: number;
   fetchedAt: number;   // local timestamp of last successful fetch
@@ -61,12 +66,12 @@ export interface FocusStateSnapshot {
 export type SWMessage =
   | { type: 'START_PAIRING' }
   | { type: 'GET_STATUS' }
-  | { type: 'POLL_NOW'; force?: boolean }  // popup/options open — rate-limited; force=true bypasses
+  | { type: 'POLL_NOW'; force?: boolean; source?: string }  // popup/options open — rate-limited; force=true bypasses
   | { type: 'UNPAIR' };
 
 export type SWMessageResult =
   | { type: 'PAIRING_STARTED'; qrPayload: string; expiresAt: number }
-  | { type: 'STATUS'; isPaired: boolean; isBlocking: boolean; pairingStatus: string | null; startedAt: number | null; endsAt: number | null; fetchedAt: number | null; syncIssue: boolean; liveSyncEnabled: boolean; isDevBuild: boolean; syncMode: 'on' | 'manual' | 'off' }
+  | { type: 'STATUS'; isPaired: boolean; isBlocking: boolean; pairingStatus: string | null; startedAt: number | null; endsAt: number | null; dockColorKey: string | null; fetchedAt: number | null; syncIssue: boolean; liveSyncEnabled: boolean; isDevBuild: boolean; syncMode: 'on' | 'off' }
   | { type: 'PAIRING_COMPLETE' }
   | { type: 'PAIRING_EXPIRED' }
   | { type: 'UNLINKED' }

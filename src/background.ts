@@ -24,8 +24,8 @@ import { FocusLinkAPI, startPairing, checkPairingStatus, APIError } from './api'
 import { updateBlockRules, clearBlockRules } from './rules';
 import type { FocusStateSnapshot, StoredConfig, SWMessage, SWMessageResult } from './types';
 
-// Worker URL is fixed per deployment — users never configure this
-export const WORKER_URL = 'https://focus.zeyt.io';
+// Worker URL — configurable via FOCUSLINK_WORKER_URL for local dev (wrangler dev)
+export const WORKER_URL = process.env.FOCUSLINK_WORKER_URL || 'https://focus.zeyt.io';
 const FOCUSLINK_DEV_BUILD = process.env.FOCUSLINK_DEV_BUILD === 'true';
 const FOCUSLINK_BUILD_ID = process.env.FOCUSLINK_BUILD_ID || 'prod';
 const FOCUSLINK_SYNC_MODE = (
@@ -34,6 +34,10 @@ const FOCUSLINK_SYNC_MODE = (
 )
   ? process.env.FOCUSLINK_SYNC_MODE
   : 'off';
+
+if (FOCUSLINK_DEV_BUILD && WORKER_URL === 'https://focus.zeyt.io') {
+  console.warn('[zeyt] Dev build hitting production Worker — set FOCUSLINK_WORKER_URL in .env.local');
+}
 
 // In-memory: track previous blocking state to detect transitions
 let _wasBlocking = false;
@@ -45,6 +49,8 @@ const POLL_RATE_LIMIT_MS = 60 * 60_000; // 1 hour — timed sessions handled by 
 // In-memory: rate-limit POLL_NOW from popup/options (max 1 per 5 min)
 let _lastPollNowAt = 0;
 const POLL_NOW_RATE_LIMIT_MS = 5 * 60_000;
+let _pollFocusStateInFlight: Promise<void> | null = null;
+let _refreshBlockListInFlight: Promise<void> | null = null;
 
 const BLOCKLIST_ALARM   = 'zeyt_blocklist';
 const PAIRING_ALARM     = 'zeyt_pair_poll';
@@ -76,14 +82,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const config = await getConfig();
   if (!config.focuslinkLiveSyncEnabled) return;
 
-  if (alarm.name === BLOCKLIST_ALARM)  await refreshBlockList();
+  if (alarm.name === BLOCKLIST_ALARM)  await refreshBlockList('extension:alarm.blocklist');
   if (alarm.name === PAIRING_ALARM)    await pollPairingStatus();
   if (alarm.name === TRANSITION_ALARM) {
     // Block optimistically first — session has ended, phone may not have pushed yet.
     // pollFocusState() will confirm (or undo if the session was extended on the phone).
     const cfg = await getConfig();
     await applyFocusState(true, cfg.lastBlockList ?? []);
-    await pollFocusState();
+    await pollFocusState('extension:alarm.transition');
   }
   if (alarm.name === WARN_ALARM)       await injectWarningToast();
   if (alarm.name === STATE_POLL_ALARM) {
@@ -96,7 +102,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (!config.lastFocusState?.isBlocking) {
       // Timed open sessions already have an exact transition alarm.
       if (config.lastFocusState?.endsAt != null) return;
-      await pollFocusState();
+      await pollFocusState('extension:alarm.state-poll');
     }
   }
 });
@@ -116,7 +122,7 @@ chrome.tabs.onUpdated.addListener(async (_tabId, info, tab) => {
   try {
     const hostname = new URL(tab.url).hostname;
     const relevant = blockList.some(d => hostname === d || hostname.endsWith(`.${d}`));
-    if (relevant) await pollFocusState();
+    if (relevant) await pollFocusState('extension:navigation.relevant');
   } catch { /* invalid URL — ignore */ }
 });
 
@@ -143,7 +149,7 @@ async function rateLimitedPoll(): Promise<void> {
   // Skip if a known end time exists — transition alarm fires at exactly the right moment
   if (config.lastFocusState?.endsAt != null) return;
   _lastPollAt = now;
-  await pollFocusState();
+  await pollFocusState('extension:window-focus');
 }
 
 chrome.windows.onFocusChanged.addListener((windowId) => {
@@ -152,21 +158,30 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 
 // ─── Block list ───────────────────────────────────────────────────────────────
 
-async function maybeRefreshBlockList(): Promise<void> {
+async function maybeRefreshBlockList(source = 'extension:blocklist.maybe'): Promise<void> {
   const config = await getConfig();
   if (!config.focuslinkLiveSyncEnabled) return;
   if (!config.groupId || !config.extensionDeviceToken) return;
   const age = Date.now() - (config.blockListFetchedAt ?? 0);
-  if (age > BLOCKLIST_REFRESH_MS) await refreshBlockList();
+  if (age > BLOCKLIST_REFRESH_MS) await refreshBlockList(source);
 }
 
-async function refreshBlockList(): Promise<void> {
+async function refreshBlockList(source = 'extension:blocklist.refresh'): Promise<void> {
+  if (_refreshBlockListInFlight) return _refreshBlockListInFlight;
+
+  _refreshBlockListInFlight = refreshBlockListInternal(source).finally(() => {
+    _refreshBlockListInFlight = null;
+  });
+  return _refreshBlockListInFlight;
+}
+
+async function refreshBlockListInternal(source: string): Promise<void> {
   const config = await getConfig();
   if (!config.focuslinkLiveSyncEnabled) return;
   if (!config.groupId || !config.extensionDeviceToken) return;
   const api = new FocusLinkAPI(WORKER_URL, config.groupId, config.extensionDeviceToken);
   try {
-    const blockList = await api.getBlockList(config.lastBlockListVersion ?? undefined);
+    const blockList = await api.getBlockList(config.lastBlockListVersion ?? undefined, source);
     if (blockList === null) return; // 304 Not Modified — already up to date
     await setConfig({
       lastBlockList: blockList.domains,
@@ -194,7 +209,7 @@ async function scheduleTransitionAlarm(endsAt: number | null): Promise<void> {
   const delayMs = endsAt - Date.now();
   if (delayMs <= 0) {
     // Session already ended — poll immediately to get fresh state
-    await pollFocusState();
+    await pollFocusState('extension:transition.immediate');
     return;
   }
 
@@ -246,8 +261,8 @@ async function injectWarningToast(): Promise<void> {
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
-            background: '#3A4F3F',
-            color: '#F5F0E8',
+            background: '#1D2A33',
+            color: '#F6F3EE',
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             fontSize: '14px',
             padding: '12px 18px',
@@ -279,7 +294,16 @@ async function injectWarningToast(): Promise<void> {
   }
 }
 
-async function pollFocusState(): Promise<void> {
+async function pollFocusState(source = 'extension:state.poll'): Promise<void> {
+  if (_pollFocusStateInFlight) return _pollFocusStateInFlight;
+
+  _pollFocusStateInFlight = pollFocusStateInternal(source).finally(() => {
+    _pollFocusStateInFlight = null;
+  });
+  return _pollFocusStateInFlight;
+}
+
+async function pollFocusStateInternal(source: string): Promise<void> {
   const config = await getConfig();
   if (!config.focuslinkLiveSyncEnabled) return;
   if (!config.groupId || !config.extensionDeviceToken) return;
@@ -287,7 +311,7 @@ async function pollFocusState(): Promise<void> {
   const api = new FocusLinkAPI(WORKER_URL, config.groupId, config.extensionDeviceToken);
 
   try {
-    const state = await api.getFocusState(config.lastFocusState?.version ?? undefined);
+    const state = await api.getFocusState(config.lastFocusState?.version ?? undefined, source);
 
     if (state === null) {
       // 304 Not Modified — state unchanged, but re-apply with current block list
@@ -305,6 +329,7 @@ async function pollFocusState(): Promise<void> {
       sessionId: state.sessionId,
       startedAt: state.startedAt,
       endsAt: state.endsAt,
+      dockColorKey: state.dockColorKey,
       blockListVersion: state.blockListVersion,
       version: state.version,
       fetchedAt: Date.now(),
@@ -312,7 +337,7 @@ async function pollFocusState(): Promise<void> {
 
     await setConfig({ lastFocusState: snapshot });
     if (state.blockListVersion !== (config.lastBlockListVersion ?? 0)) {
-      await refreshBlockList();
+      await refreshBlockList(`${source}:blocklist-version`);
     }
     const refreshedConfig = await getConfig();
     await scheduleTransitionAlarm(snapshot.endsAt);
@@ -403,6 +428,7 @@ async function pollPairingStatus(): Promise<void> {
       WORKER_URL,
       config.pairing.groupId,
       config.pairing.pairingToken,
+      'extension:pairing.poll',
     );
 
     if (result.status === 'completed' && result.extensionDeviceToken) {
@@ -414,8 +440,8 @@ async function pollPairingStatus(): Promise<void> {
       await chrome.alarms.clear(PAIRING_ALARM);
       await notifyPopup({ type: 'PAIRING_COMPLETE' });
       // After pairing: fetch block list + state immediately
-      await refreshBlockList();
-      await pollFocusState();
+      await refreshBlockList('extension:pairing.complete');
+      await pollFocusState('extension:pairing.complete');
     } else if (result.status === 'expired') {
       await setConfig({ pairing: null });
       await chrome.alarms.clear(PAIRING_ALARM);
@@ -447,6 +473,7 @@ chrome.runtime.onMessage.addListener(
         case 'POLL_NOW': {
           // Popup opened or blocked.html "Check now" — fetch state (and block list if stale)
           // Rate-limited: blocked.html "Check now" bypasses the limit via force flag
+          const source = message.source ?? 'extension:message.poll-now';
           const now = Date.now();
           const cfg = await getConfig();
           if (cfg.focuslinkLiveSyncEnabled && (message.force || now - _lastPollNowAt > POLL_NOW_RATE_LIMIT_MS)) {
@@ -454,9 +481,9 @@ chrome.runtime.onMessage.addListener(
             // Only refresh block list if it's more than 1 hour old — the 24h alarm handles
             // scheduled refreshes; refreshing on every poll wastes DO requests.
             if (now - (cfg.blockListFetchedAt ?? 0) > 60 * 60_000) {
-              await refreshBlockList();
+              await refreshBlockList(`${source}:blocklist-stale`);
             }
-            await pollFocusState();
+            await pollFocusState(source);
           }
           sendResponse(await handleGetStatus());
           break;
@@ -482,7 +509,7 @@ async function handleStartPairing(): Promise<SWMessageResult> {
     return { type: 'ERROR', message: 'Live sync is disabled by your local terminal setting. Run ./scripts/set_focuslink_sync_mode.sh on and rebuild before pairing against production.' };
   }
   try {
-    const result = await startPairing(WORKER_URL, config.extensionDeviceId);
+    const result = await startPairing(WORKER_URL, config.extensionDeviceId, 'extension:pairing.start');
     await setConfig({
       pairing: {
         pairingToken: result.pairingToken,
@@ -506,8 +533,26 @@ async function handleStartPairing(): Promise<SWMessageResult> {
 
 async function handleGetStatus(): Promise<SWMessageResult> {
   const config = await getConfig();
-  const snapshot = config.lastFocusState;
-  const stale = snapshot ? Date.now() - snapshot.fetchedAt > STALE_THRESHOLD_MS : false;
+  let snapshot = config.lastFocusState;
+  let stale = snapshot ? Date.now() - snapshot.fetchedAt > STALE_THRESHOLD_MS : false;
+
+  if (
+    snapshot
+    && !snapshot.isBlocking
+    && snapshot.endsAt != null
+    && snapshot.endsAt <= Date.now()
+  ) {
+    snapshot = {
+      ...snapshot,
+      isBlocking: true,
+      endsAt: null,
+      dockColorKey: null,
+    };
+    stale = true;
+    await setConfig({ lastFocusState: snapshot });
+    await applyFocusState(true, config.lastBlockList ?? []);
+    void pollFocusState('extension:status.expired-session');
+  }
 
   return {
     type: 'STATUS',
@@ -516,6 +561,7 @@ async function handleGetStatus(): Promise<SWMessageResult> {
     pairingStatus: config.pairing?.status ?? null,
     startedAt: snapshot?.startedAt ?? null,
     endsAt: snapshot?.endsAt ?? null,
+    dockColorKey: snapshot?.dockColorKey ?? null,
     fetchedAt: snapshot?.fetchedAt ?? null,
     syncIssue: stale,
     liveSyncEnabled: config.focuslinkLiveSyncEnabled,
@@ -579,8 +625,8 @@ async function syncRuntimeState(
   await initIcon();
 
   if (refreshOnResume && config.groupId && config.extensionDeviceToken) {
-    await maybeRefreshBlockList();
-    await pollFocusState();
+    await maybeRefreshBlockList('extension:startup.resume');
+    await pollFocusState('extension:startup.resume');
   }
 
   return config;
@@ -596,8 +642,8 @@ type IconState = 'uncoupled' | 'still' | 'open';
 
 const ICON_COLORS: Record<IconState, { bg: string; z: string; dot: string }> = {
   uncoupled: { bg: '#F59E0B', z: '#1C1C1E', dot: '#F59E0B' }, // amber — attention-grabbing, not aggressive
-  still:     { bg: '#3A4F3F', z: '#C4956A', dot: '#3A4F3F' }, // dark green + gold — matches app still mode
-  open:      { bg: '#F5EDE0', z: '#3A4F3F', dot: '#F5EDE0' }, // warm cream + dark green — matches app open mode
+  still:     { bg: '#1D2A33', z: '#C4956A', dot: '#1D2A33' }, // slate still mode
+  open:      { bg: '#F6F3EE', z: '#1D2A33', dot: '#F6F3EE' }, // warm linen open mode
 };
 
 const LOGO_MARK = 'M660.355 765C662.92 765.001 665.44 764.329 667.663 763.051C669.886 761.774 671.734 759.936 673.022 757.722C674.31 755.507 674.992 752.994 675 750.434C675.008 747.874 674.342 745.356 673.069 743.133L548.685 525.989L519.494 576.882L591.693 702.924C592.966 705.146 593.632 707.664 593.624 710.224C593.615 712.784 592.933 715.298 591.646 717.512C590.358 719.726 588.51 721.564 586.287 722.842C584.064 724.119 581.544 724.791 578.978 724.79L439.686 724.752C437.12 724.751 434.6 724.077 432.378 722.799C430.156 721.52 428.309 719.681 427.022 717.466C425.736 715.251 425.055 712.737 425.048 710.177C425.042 707.617 425.709 705.1 426.983 702.878L668.981 280.956C670.256 278.734 670.923 276.216 670.916 273.656C670.909 271.096 670.229 268.582 668.942 266.367C667.656 264.152 665.809 262.313 663.587 261.034C661.364 259.756 658.844 259.082 656.279 259.082C541.608 259.05 477.316 259.032 362.645 259C360.08 258.999 357.56 259.671 355.337 260.949C353.114 262.226 351.266 264.064 349.978 266.278C348.691 268.493 348.008 271.006 348 273.566C347.992 276.126 348.658 278.644 349.931 280.867L474.315 498.011L503.506 447.118L431.307 321.076C430.034 318.854 429.368 316.336 429.376 313.776C429.385 311.216 430.067 308.702 431.354 306.488C432.642 304.274 434.49 302.436 436.713 301.158C438.936 299.881 441.456 299.209 444.022 299.21L583.314 299.249C585.88 299.249 588.4 299.923 590.622 301.201C592.844 302.48 594.691 304.319 595.978 306.534C597.264 308.749 597.945 311.263 597.952 313.823C597.958 316.383 597.291 318.9 596.017 321.122L354.019 743.044C352.744 745.266 352.077 747.784 352.084 750.344C352.091 752.904 352.771 755.418 354.058 757.633C355.344 759.848 357.191 761.687 359.413 762.966C361.636 764.244 364.156 764.918 366.721 764.918L660.355 765Z';

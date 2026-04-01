@@ -5,6 +5,13 @@
 import type { SWMessage, SWMessageResult } from '../types';
 
 const $ = (id: string) => document.getElementById(id)!;
+const OPEN_DOCK_COLOR_LABELS: Record<string, string> = {
+  'white-marble': 'White marble',
+  'slate-marble': 'Slate marble',
+  'muted-blue': 'Muted blue',
+  'muted-green': 'Muted green',
+  'muted-purple': 'Muted purple',
+};
 
 function show(viewId: string): void {
   for (const id of ['view-paired', 'view-unlinked', 'view-loading']) {
@@ -14,13 +21,15 @@ function show(viewId: string): void {
 
 function renderDevGuard(status: Extract<SWMessageResult, { type: 'STATUS' }>): void {
   const banner = $('dev-sync-banner');
-  if (!status.isDevBuild || status.liveSyncEnabled) {
+  if (status.liveSyncEnabled) {
     banner.style.display = 'none';
     return;
   }
 
   banner.style.display = 'block';
-  $('dev-sync-text').textContent = 'Live sync is disabled in this dev build. Run ./scripts/set_focuslink_sync_mode.sh on, then rebuild/reload before testing production sync.';
+  $('dev-sync-text').textContent = status.syncMode === 'off'
+    ? 'Live sync is disabled by your local terminal setting. Run ./scripts/set_focuslink_sync_mode.sh on, then rebuild/reload before testing production sync.'
+    : 'Live sync is disabled in this local build. Run ./scripts/set_focuslink_sync_mode.sh on, then rebuild/reload before testing production sync.';
 }
 
 function formatTime(ts: number): string {
@@ -41,12 +50,21 @@ async function init(): Promise<void> {
 
   // Background poll — silently refreshes state + block list
   if (cached.type === 'STATUS' && cached.liveSyncEnabled) {
-    sendToSW({ type: 'POLL_NOW' }).catch(() => {});
+    sendToSW({ type: 'POLL_NOW', source: 'extension:popup.open' })
+      .then((fresh) => {
+        if (fresh.type === 'STATUS') {
+          fresh.isPaired ? renderPaired(fresh) : show('view-unlinked');
+          renderDevGuard(fresh);
+        }
+      })
+      .catch(() => {});
   }
 }
 
 function renderPaired(status: Extract<SWMessageResult, { type: 'STATUS' }>): void {
   show('view-paired');
+  document.body.dataset.dockColor = '';
+  $('dock-chip').style.display = 'none';
 
   if (status.isBlocking) {
     document.body.className = 'still-mode';
@@ -62,6 +80,12 @@ function renderPaired(status: Extract<SWMessageResult, { type: 'STATUS' }>): voi
     const until = status.endsAt ? `Until ${formatTime(status.endsAt)}` : 'No active focus session.';
     $('state-sub').textContent     = until;
     $('unlock-chip').style.display = 'none';
+    const dockLabel = status.dockColorKey ? OPEN_DOCK_COLOR_LABELS[status.dockColorKey] : null;
+    if (dockLabel) {
+      document.body.dataset.dockColor = status.dockColorKey || '';
+      $('dock-chip-label').textContent = dockLabel;
+      $('dock-chip').style.display = 'inline-flex';
+    }
   }
 
   if (status.syncIssue) {
