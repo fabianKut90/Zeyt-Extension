@@ -7,16 +7,86 @@
       * { box-sizing: border-box; margin: 0; padding: 0; }
 
       body {
+        --open-bg: #F6F3EE;
+        --open-fg: #2C3640;
+        --open-sub: #7A817D;
+        --open-eyebrow: #9AA19D;
+        --open-divider: #E8E4DE;
+        --open-button-bg: #46545D;
+        --open-button-text: #F7F4EF;
+        --open-chip-bg: rgba(70, 84, 93, 0.08);
+        --open-chip-border: rgba(70, 84, 93, 0.16);
+        --open-chip-text: #46545D;
         width: 320px;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background: #F9F8F6;
-        color: #1C1C1E;
+        background: #F6F3EE;
+        color: #2C3640;
         transition: background 0.25s ease, color 0.25s ease;
       }
 
       /* ── Mode skins ─────────────────────────────────────────────────────── */
-      body.still-mode  { background: #3A4F3F; color: #F5EDE0; }
-      body.open-mode   { background: #F9F8F6; color: #1C1C1E; }
+      body.still-mode  { background: #1D2A33; color: #F6F3EE; }
+      body.open-mode   { background: var(--open-bg); color: var(--open-fg); }
+      body.open-mode[data-dock-color="white-marble"] {
+        --open-bg: #F8F7F4;
+        --open-fg: #2A3239;
+        --open-sub: #7B878F;
+        --open-eyebrow: #97A0A5;
+        --open-divider: #DDE2E4;
+        --open-button-bg: #31424C;
+        --open-button-text: #F8F7F4;
+        --open-chip-bg: rgba(49, 66, 76, 0.08);
+        --open-chip-border: rgba(49, 66, 76, 0.16);
+        --open-chip-text: #31424C;
+      }
+      body.open-mode[data-dock-color="slate-marble"] {
+        --open-bg: #EEF3F1;
+        --open-fg: #294047;
+        --open-sub: #6A8082;
+        --open-eyebrow: #819592;
+        --open-divider: #D5E2DE;
+        --open-button-bg: #355159;
+        --open-button-text: #F3F7F6;
+        --open-chip-bg: rgba(53, 81, 89, 0.08);
+        --open-chip-border: rgba(53, 81, 89, 0.16);
+        --open-chip-text: #355159;
+      }
+      body.open-mode[data-dock-color="muted-blue"] {
+        --open-bg: #EDF2F4;
+        --open-fg: #2D414A;
+        --open-sub: #70838B;
+        --open-eyebrow: #8898A0;
+        --open-divider: #D9E2E6;
+        --open-button-bg: #48636E;
+        --open-button-text: #F3F7F8;
+        --open-chip-bg: rgba(72, 99, 110, 0.08);
+        --open-chip-border: rgba(72, 99, 110, 0.16);
+        --open-chip-text: #48636E;
+      }
+      body.open-mode[data-dock-color="muted-green"] {
+        --open-bg: #EEF1EE;
+        --open-fg: #34413B;
+        --open-sub: #78817A;
+        --open-eyebrow: #8A918B;
+        --open-divider: #DEE4DE;
+        --open-button-bg: #5F6C65;
+        --open-button-text: #F3F5F2;
+        --open-chip-bg: rgba(95, 108, 101, 0.08);
+        --open-chip-border: rgba(95, 108, 101, 0.16);
+        --open-chip-text: #5F6C65;
+      }
+      body.open-mode[data-dock-color="muted-purple"] {
+        --open-bg: #F2EEF3;
+        --open-fg: #433A46;
+        --open-sub: #85788A;
+        --open-eyebrow: #9A8EA0;
+        --open-divider: #E2DCE4;
+        --open-button-bg: #67596B;
+        --open-button-text: #F7F3F8;
+        --open-chip-bg: rgba(103, 89, 107, 0.08);
+        --open-chip-border: rgba(103, 89, 107, 0.16);
+        --open-chip-text: #67596B;
+      }
 
       /* ── Header ─────────────────────────────────────────────────────────── */
       .header {
@@ -50,7 +120,7 @@
         margin-bottom: 5px;
       }
       .still-mode  .state-eyebrow { color: #C4956A; }
-      .open-mode   .state-eyebrow { color: #9CA3AF; }
+      .open-mode   .state-eyebrow { color: var(--open-eyebrow); }
 
       .state-title {
         font-size: 28px;
@@ -59,15 +129,15 @@
         line-height: 1.05;
         margin-bottom: 8px;
       }
-      .still-mode  .state-title { color: #F5EDE0; }
-      .open-mode   .state-title { color: #1C1C1E; }
+      .still-mode  .state-title { color: #F6F3EE; }
+      .open-mode   .state-title { color: var(--open-fg); }
 
       .state-sub {
         font-size: 13px;
         line-height: 1.5;
       }
-      .still-mode  .state-sub { color: rgba(245,237,224,0.65); }
-      .open-mode   .state-sub { color: #6B7280; }
+      .still-mode  .state-sub { color: rgba(126,143,156,0.92); }
+      .open-mode   .state-sub { color: var(--open-sub); }
 
       /* ── Unlock chip ─────────────────────────────────────────────────────── */
       .unlock-chip {
@@ -84,10 +154,24 @@
       }
       .unlock-chip svg { width: 13px; height: 13px; flex-shrink: 0; }
 
+      .dock-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 12px;
+        padding: 7px 12px;
+        border-radius: 99px;
+        background: var(--open-chip-bg);
+        border: 1px solid var(--open-chip-border);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--open-chip-text);
+      }
+
       /* ── Divider ─────────────────────────────────────────────────────────── */
       .divider { height: 1px; margin: 14px 16px 0; }
       .still-mode .divider { background: rgba(255,255,255,0.1); }
-      .open-mode  .divider { background: #E5E7EB; }
+      .open-mode  .divider { background: var(--open-divider); }
 
       /* ── Footer ──────────────────────────────────────────────────────────── */
       .footer { padding: 10px 16px 14px; }
@@ -105,12 +189,12 @@
       }
       .still-mode .btn-settings {
         background: rgba(255,255,255,0.11);
-        color: #F5EDE0;
+        color: #F6F3EE;
       }
       .still-mode .btn-settings:hover { background: rgba(255,255,255,0.17); }
       .open-mode  .btn-settings {
-        background: #3A4F3F;
-        color: #fff;
+        background: var(--open-button-bg);
+        color: var(--open-button-text);
       }
       .open-mode  .btn-settings:hover { opacity: 0.88; }
 
@@ -119,7 +203,7 @@
         font-size: 10px;
         margin-top: 7px;
       }
-      .still-mode .sync-note { color: rgba(245,237,224,0.3); }
+      .still-mode .sync-note { color: rgba(126,143,156,0.56); }
       .open-mode  .sync-note { color: #D1D5DB; }
 
       /* ── Unlinked view ───────────────────────────────────────────────────── */
@@ -131,7 +215,7 @@
       .btn-primary {
         width: 100%;
         padding: 11px;
-        background: #3A4F3F;
+        background: #1D2A33;
         color: #fff;
         border: none;
         border-radius: 9px;
@@ -183,6 +267,9 @@
         <div class="state-eyebrow" id="state-eyebrow">Mode</div>
         <div class="state-title"   id="state-title">—</div>
         <div class="state-sub"     id="state-sub">—</div>
+        <div class="dock-chip" id="dock-chip" style="display:none">
+          Dock: <span id="dock-chip-label">—</span>
+        </div>
         <div class="unlock-chip" id="unlock-chip" style="display:none">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="5" y="11" width="14" height="10" rx="2"/>

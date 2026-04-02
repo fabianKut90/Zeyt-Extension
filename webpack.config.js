@@ -70,7 +70,8 @@ module.exports = (env, argv) => ({
       POSTHOG_KEY: '',
       POSTHOG_HOST: 'https://eu.i.posthog.com',
       FOCUSLINK_DEV_BUILD: argv.mode === 'production' ? 'false' : 'true',
-      FOCUSLINK_SYNC_MODE: argv.mode === 'production' ? 'on' : 'manual',
+      FOCUSLINK_SYNC_MODE: argv.mode === 'production' ? 'on' : 'off',
+      FOCUSLINK_WORKER_URL: argv.mode === 'production' ? 'https://focus.zeyt.io' : '',
       ...envDefaults,
     }),
     new webpack.DefinePlugin({

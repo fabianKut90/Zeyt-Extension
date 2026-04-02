@@ -86,10 +86,33 @@
         letter-spacing: 0.05em;
       }
       .dev-sync-copy { font-size: 13px; color: #78350F; line-height: 1.5; margin-bottom: 12px; }
+      .review-btn { display: none; width: 100%; margin-top: 12px; }
+      .review-btn.visible { display: block; }
+      .review-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(17, 24, 39, 0.45);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+      .review-overlay.visible { display: flex; }
+      .review-modal {
+        width: 100%;
+        max-width: 420px;
+        background: #fff;
+        border-radius: 14px;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 18px 48px rgba(17, 24, 39, 0.22);
+        padding: 18px;
+      }
+      .review-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+      .review-status { min-height: 18px; margin-top: 12px; }
     </style>
   </head>
   <body>
-    <h1>zeyt</h1>
+    <h1 id="settings-title" style="cursor:default;user-select:none;">zeyt</h1>
 
     <div class="card dev-sync-card" id="dev-sync-card">
       <div class="dev-sync-title">Dev Build</div>
@@ -107,6 +130,17 @@
         Scan the QR code below with the zeyt app on your phone to link this browser.
       </p>
 
+      <div id="pairing-top-sites-consent" style="display:none;margin-top:12px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+        <p class="label" style="font-weight:600;">Use your most visited sites to speed up setup?</p>
+        <p class="hint" style="margin-top:6px;">
+          If you allow this, zeyt adds up to 20 of your most visited sites to the pairing QR so your phone can suggest them faster. You can skip this and pair normally.
+        </p>
+        <div class="row" style="margin-top:12px;justify-content:flex-end;">
+          <button class="btn-secondary" id="btn-top-sites-skip">Skip</button>
+          <button class="btn-secondary" id="btn-top-sites-allow">Allow access</button>
+        </div>
+      </div>
+
       <!-- QR + pairing flow (shown when not linked) -->
       <div id="qr-section">
         <canvas id="qr-canvas"></canvas>
@@ -116,6 +150,33 @@
 
       <button class="btn-primary" id="btn-pair" style="display:none">Show QR Code</button>
       <div class="qr-error" id="qr-error" style="display:none"></div>
+      <button class="btn-secondary review-btn" id="btn-review-controls">Review Controls</button>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <h2 style="margin-bottom:0">1-Minute Warning</h2>
+          <p class="hint" id="warning-setting-hint" style="margin-top:6px;">
+            Show a small in-page warning when open mode is about to end.
+          </p>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="warning-toggle" />
+          <span class="label">Enabled</span>
+        </label>
+      </div>
+      <div id="warning-setup-prompt" style="display:none;margin-top:12px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
+        <p class="label" style="font-weight:600;">Enable the 1-minute warning?</p>
+        <p class="hint" style="margin-top:6px;">
+          If you allow this, zeyt can show a small banner inside the current page one minute before open mode ends.
+        </p>
+        <div class="row" style="margin-top:12px;justify-content:flex-end;">
+          <button class="btn-secondary" id="btn-warning-skip">Not now</button>
+          <button class="btn-secondary" id="btn-warning-allow">Enable warning</button>
+        </div>
+      </div>
+      <div class="status-hint subtle" id="warning-setting-status" style="margin-top:10px;"></div>
     </div>
 
     <!-- ── Blocked sites ── -->
@@ -165,6 +226,27 @@
       Removes the connection to your phone app. Focus sessions will no longer
       sync until you pair again.
     </p>
+
+    <div class="review-overlay" id="review-overlay">
+      <div class="review-modal" role="dialog" aria-modal="true" aria-labelledby="review-modal-title">
+        <div class="row" style="align-items:flex-start;">
+          <div>
+            <h2 id="review-modal-title" style="margin-bottom:0;color:#111827;font-size:16px;letter-spacing:0;text-transform:none;">Review Controls</h2>
+            <p class="hint" style="margin-top:6px;">For Chrome Web Store review only. These controls change the synced focus state.</p>
+          </div>
+          <button id="btn-review-close" style="background:none;border:none;font-size:22px;line-height:1;color:#9ca3af;padding:0;cursor:pointer;">×</button>
+        </div>
+        <div class="review-actions">
+          <button class="btn-primary" id="btn-review-connect-demo">Connect reviewer demo</button>
+          <button class="btn-secondary" id="btn-review-install-instagram">Add instagram.com to blocked list</button>
+          <button class="btn-primary" id="btn-review-open-5m">Open mode for 5 minutes</button>
+          <button class="btn-primary" id="btn-review-open-now">Open mode now</button>
+          <button class="btn-primary" id="btn-review-still-now">Still mode now</button>
+          <button class="btn-secondary" id="btn-review-cancel">Cancel</button>
+        </div>
+        <div class="status-hint subtle review-status" id="review-status"></div>
+      </div>
+    </div>
 
     <script src="../options.js" type="module"></script>
   </body>
