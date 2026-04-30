@@ -59,6 +59,8 @@ export interface FocusStateSnapshot {
   blockListVersion: number;
   version: number;
   fetchedAt: number;   // local timestamp of last successful fetch
+  dailyOpenModeLimitMs?: number | null;
+  unlockedMsToday?: number | null;
 }
 
 // ─── Service worker messages ──────────────────────────────────────────────────
@@ -71,7 +73,7 @@ export type SWMessage =
 
 export type SWMessageResult =
   | { type: 'PAIRING_STARTED'; qrPayload: string; expiresAt: number }
-  | { type: 'STATUS'; isPaired: boolean; isBlocking: boolean; pairingStatus: string | null; startedAt: number | null; endsAt: number | null; dockColorKey: string | null; fetchedAt: number | null; syncIssue: boolean; liveSyncEnabled: boolean; isDevBuild: boolean; syncMode: 'on' | 'off' }
+  | { type: 'STATUS'; isPaired: boolean; isBlocking: boolean; pairingStatus: string | null; startedAt: number | null; endsAt: number | null; dockColorKey: string | null; fetchedAt: number | null; syncIssue: boolean; liveSyncEnabled: boolean; isDevBuild: boolean; syncMode: 'on' | 'off'; dailyOpenModeLimitMs: number | null; unlockedMsToday: number | null }
   | { type: 'PAIRING_COMPLETE' }
   | { type: 'PAIRING_EXPIRED' }
   | { type: 'UNLINKED' }

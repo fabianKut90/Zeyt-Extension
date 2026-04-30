@@ -333,6 +333,8 @@ async function pollFocusStateInternal(source: string): Promise<void> {
       blockListVersion: state.blockListVersion,
       version: state.version,
       fetchedAt: Date.now(),
+      dailyOpenModeLimitMs: (state as any).dailyOpenModeLimitMs ?? null,
+      unlockedMsToday: (state as any).unlockedMsToday ?? null,
     };
 
     await setConfig({ lastFocusState: snapshot });
@@ -567,6 +569,8 @@ async function handleGetStatus(): Promise<SWMessageResult> {
     liveSyncEnabled: config.focuslinkLiveSyncEnabled,
     isDevBuild: FOCUSLINK_DEV_BUILD,
     syncMode: FOCUSLINK_SYNC_MODE,
+    dailyOpenModeLimitMs: snapshot?.dailyOpenModeLimitMs ?? null,
+    unlockedMsToday: snapshot?.unlockedMsToday ?? null,
   };
 }
 

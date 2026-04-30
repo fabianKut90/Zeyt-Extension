@@ -36,6 +36,18 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function getBudgetLabel(status: any): string | null {
+  const limitMs = status.dailyOpenModeLimitMs;
+  const usedMs = status.unlockedMsToday;
+  if (!limitMs || limitMs <= 0) return null;
+  if (usedMs == null) return null;
+  const remainingMin = Math.max(0, Math.ceil((limitMs - usedMs) / 60000));
+  if (usedMs > limitMs) {
+    return `${Math.ceil(usedMs / 60000)} of ${Math.round(limitMs / 60000)} min used`;
+  }
+  return `${remainingMin} min left today`;
+}
+
 async function sendToSW(message: SWMessage): Promise<SWMessageResult> {
   return chrome.runtime.sendMessage(message);
 }
@@ -78,7 +90,8 @@ function renderPaired(status: Extract<SWMessageResult, { type: 'STATUS' }>): voi
     $('state-eyebrow').textContent = 'Status';
     $('state-title').textContent   = 'Open mode';
     const until = status.endsAt ? `Until ${formatTime(status.endsAt)}` : 'No active focus session.';
-    $('state-sub').textContent     = until;
+    const budgetLabel = getBudgetLabel(status);
+    $('state-sub').textContent     = budgetLabel ? `${until} · ${budgetLabel}` : until;
     $('unlock-chip').style.display = 'none';
     const dockLabel = status.dockColorKey ? OPEN_DOCK_COLOR_LABELS[status.dockColorKey] : null;
     if (dockLabel) {

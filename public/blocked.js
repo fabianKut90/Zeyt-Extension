@@ -1,9 +1,41 @@
 // The original URL is passed as ?url= by the declarativeNetRequest redirect rule
 const params = new URLSearchParams(location.search);
 const originalUrl = params.get('url') || '';
+
+function matchesBlockedDomain(hostname, domain) {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
+function isUrlStillBlockedByList(url, blockedDomains) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname;
+    return blockedDomains.some((domain) => matchesBlockedDomain(host, domain));
+  } catch {
+    return false;
+  }
+}
+
+async function getStoredBlockedDomains() {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return null;
+  try {
+    const result = await chrome.storage.local.get('config');
+    return Array.isArray(result?.config?.lastBlockList) ? result.config.lastBlockList : [];
+  } catch {
+    return null;
+  }
+}
+
+function formatHostForTitle(host) {
+  if (!host) return 'Zeyt';
+  const trimmedHost = host.replace(/^www\./, '');
+  return `Zeyt - ${trimmedHost.charAt(0).toUpperCase()}${trimmedHost.slice(1)}`;
+}
+
 try {
   const host = originalUrl ? new URL(originalUrl).hostname : location.hostname;
   document.getElementById('domain').textContent = host;
+  document.title = formatHostForTitle(host);
 } catch {}
 
 // Show session end time from chrome.storage if available
@@ -35,12 +67,25 @@ async function sendToSW(msg, retries = 2, delayMs = 800) {
   }
 }
 
+async function shouldReloadToOriginalUrl() {
+  const blockedDomains = await getStoredBlockedDomains();
+  if (!blockedDomains) return false;
+  return !isUrlStillBlockedByList(originalUrl, blockedDomains);
+}
+
 // Poll helper — sends POLL_NOW to SW, reloads if unblocked
 async function checkState(auto) {
   const btn = document.getElementById('btn-refresh');
   const msg = document.getElementById('refresh-msg');
   btn.disabled = true;
   if (!auto) msg.textContent = 'Checking…';
+
+  if (await shouldReloadToOriginalUrl()) {
+    msg.textContent = 'This site is no longer blocked. Redirecting…';
+    setTimeout(() => { location.href = originalUrl || 'about:blank'; }, 300);
+    return;
+  }
+
   try {
     const result = await sendToSW({
       type: 'POLL_NOW',

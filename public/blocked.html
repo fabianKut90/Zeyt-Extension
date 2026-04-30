@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Still Mode · zeyt</title>
+    <title>Zeyt</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
       html, body { height: 100%; }
@@ -113,9 +113,11 @@
       /* Footer */
       .footer {
         margin-top: 48px;
-        font-size: 11px;
-        color: rgba(126, 143, 156, 0.44);
-        letter-spacing: 0.3px;
+      }
+
+      .footer-wordmark {
+        width: 74px;
+        opacity: 0.46;
       }
     </style>
   </head>
@@ -141,7 +143,9 @@
       </button>
       <p class="refresh-msg" id="refresh-msg"></p>
 
-      <p class="footer">zeyt</p>
+      <div class="footer">
+        <img class="footer-wordmark" src="icons/zeyt-wordmark-light.svg" alt="zeyt" />
+      </div>
     </div>
 
     <script src="blocked.js"></script>

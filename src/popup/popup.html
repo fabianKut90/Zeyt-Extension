@@ -95,8 +95,12 @@
         gap: 8px;
         padding: 16px 16px 0;
       }
-      .header img   { width: 28px; height: 28px; border-radius: 7px; }
-      .header-name  { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; flex: 1; }
+      .header img:first-child { width: 28px; height: 28px; border-radius: 7px; }
+      .header-name  { display: flex; align-items: center; flex: 1; min-width: 0; }
+      .header-wordmark { width: 68px; height: auto; display: block; }
+      .header-wordmark-light { display: none; }
+      .still-mode .header-wordmark-dark { display: none; }
+      .still-mode .header-wordmark-light { display: block; }
 
       .link-indicator {
         font-size: 10px;
@@ -209,6 +213,7 @@
       /* ── Unlinked view ───────────────────────────────────────────────────── */
       .unlinked-wrap { padding: 24px 16px 20px; text-align: center; }
       .unlinked-logo { width: 52px; height: 52px; border-radius: 13px; margin-bottom: 14px; opacity: 0.5; }
+      .unlinked-wordmark { width: 88px; margin: 0 auto 16px; display: block; }
       .unlinked-title { font-size: 15px; font-weight: 700; color: #1C1C1E; margin-bottom: 6px; }
       .unlinked-sub   { font-size: 12px; color: #9CA3AF; margin-bottom: 18px; line-height: 1.55; }
 
@@ -259,7 +264,10 @@
     <div id="view-paired" style="display:none">
       <div class="header">
         <img src="icons/icon48.png" alt="zeyt" />
-        <span class="header-name">zeyt</span>
+        <span class="header-name">
+          <img class="header-wordmark header-wordmark-dark" src="icons/zeyt-wordmark-dark.svg" alt="zeyt" />
+          <img class="header-wordmark header-wordmark-light" src="icons/zeyt-wordmark-light.svg" alt="zeyt" />
+        </span>
         <span class="link-indicator on">Linked</span>
       </div>
 
@@ -291,6 +299,7 @@
     <div id="view-unlinked" style="display:none">
       <div class="unlinked-wrap">
         <img class="unlinked-logo" src="icons/icon48.png" alt="zeyt" />
+        <img class="unlinked-wordmark" src="icons/zeyt-wordmark-dark.svg" alt="zeyt" />
         <div class="unlinked-title">No phone linked yet</div>
         <div class="unlinked-sub">Open Settings to scan the QR code with the zeyt app on your phone.</div>
         <button class="btn-primary" id="btn-open-settings">Open Settings</button>
